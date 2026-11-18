@@ -48,6 +48,7 @@ class BudgetPlannerTest < ApplicationSystemTestCase
 
     within("[data-budget-planner-target='panel']") { click_on "Food shopping" }
     assert_selector "[data-budget-planner-target='panel'] button[aria-pressed='true']", text: "Food shopping"
+    assert_selector "[data-budget-planner-target='historyTitle']", text: "Food shopping"
 
     page.driver.browser.manage.window.resize_to(390, 1400)
     visit budget_planner_path(Budget.date_to_param(Date.current))

@@ -32,7 +32,10 @@
       <% end %>
 
       <%= render DS::Card.new do %>
-        <h2 class="text-sm font-medium text-secondary mb-2"><%= t(".history_title") %></h2>
+        <h2 class="text-sm font-medium text-secondary mb-2">
+          <%= t(".history_title") %> ·
+          <span class="text-primary" data-budget-planner-target="historyTitle"><%= t(".js.all_categories") %></span>
+        </h2>
         <div class="w-full h-56" data-budget-planner-target="history"></div>
       <% end %>
     </div>

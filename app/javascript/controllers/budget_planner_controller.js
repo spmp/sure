@@ -9,7 +9,7 @@ const UNCATEGORIZED = "uncategorized";
 // month by month, so a node's average and median are taken over its own
 // monthly totals — summing children's medians would not give the parent's.
 export default class extends Controller {
-  static targets = ["circles", "history", "panel"];
+  static targets = ["circles", "history", "historyTitle", "panel"];
   static values = { history: Object, labels: Object };
 
   #hidden = new Set();
@@ -246,6 +246,10 @@ export default class extends Controller {
     if (!width) return;
 
     const selected = tree.find((top) => top.id === this.#selected);
+    this.historyTitleTarget.textContent = selected
+      ? selected.name
+      : this.#label("all_categories");
+    this.historyTitleTarget.style.color = selected ? selected.color : "";
     const shown = tree.filter((top) => !this.#hidden.has(top.id));
     const spend = selected
       ? selected.series
