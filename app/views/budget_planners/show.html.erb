@@ -2,6 +2,7 @@
 <div class="@container pb-6 lg:pb-12 space-y-4"
      data-controller="budget-planner"
      data-budget-planner-history-value="<%= @history.as_json.to_json %>"
+     data-budget-planner-plan-value="<%= @plan_state.to_json %>"
      data-budget-planner-labels-value="<%= t(".js").to_json %>">
   <div class="flex flex-wrap items-center gap-3">
     <div>
@@ -41,11 +42,54 @@
     </div>
 
     <%= render DS::Card.new(class: "@4xl:col-span-2") do %>
-      <div class="mb-3">
-        <h2 class="text-sm font-medium text-secondary"><%= t(".panel_title") %></h2>
-        <p class="text-xs text-subdued"><%= t(".panel_columns") %></p>
-      </div>
-      <div data-budget-planner-target="panel" class="text-sm"></div>
+      <%= form_with url: budget_planner_path(@budget, **budget_owner_query), method: :patch, scope: :plan,
+            data: { budget_planner_target: "form" } do %>
+        <div class="flex items-start justify-between gap-2 mb-3">
+          <div>
+            <h2 class="text-sm font-medium text-secondary"><%= t(".panel_title") %></h2>
+            <p class="text-xs text-subdued"><%= t(".panel_columns") %></p>
+          </div>
+          <% if @plan_state[:editable] %>
+            <%= render DS::SegmentedControl.new(aria_label: t(".fill_label"), class: "bg-surface-inset shrink-0") do |control| %>
+              <% %w[average median current].each do |source| %>
+                <% control.with_segment(t(".fill.#{source}"), data: { action: "budget-planner#fill", source: source, budget_planner_target: "fillButton" }) %>
+              <% end %>
+            <% end %>
+          <% end %>
+        </div>
+
+        <div data-budget-planner-target="panel" class="text-sm"></div>
+
+        <div class="mt-4 pt-3 border-t border-secondary space-y-2 text-sm">
+          <div class="flex items-center justify-between">
+            <span class="text-secondary"><%= t(".budget_total") %></span>
+            <span class="font-medium text-primary tabular-nums privacy-sensitive" data-budget-planner-target="budgetTotal"></span>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <label for="plan_expected_income" class="text-secondary"><%= t(".expected_income") %></label>
+            <div data-budget-planner-target="incomeSlot" class="privacy-sensitive"></div>
+          </div>
+          <div class="flex items-center justify-between rounded-lg px-2 py-1.5 -mx-2" data-budget-planner-target="remainingRow">
+            <span class="font-medium"><%= t(".remaining") %></span>
+            <span class="font-medium tabular-nums privacy-sensitive" data-budget-planner-target="remaining"></span>
+          </div>
+        </div>
+
+        <% if @plan_state[:editable] %>
+          <div class="mt-4 flex justify-end">
+            <%= render DS::Button.new(
+                  text: t(".apply", budget: @budget.name),
+                  type: "submit",
+                  data: { budget_planner_target: "apply" },
+                  confirm: CustomConfirm.new(
+                    title: t(".confirm.title", budget: @budget.name),
+                    body: t(".confirm.body"),
+                    btn_text: t(".confirm.button")
+                  )
+                ) %>
+          </div>
+        <% end %>
+      <% end %>
     <% end %>
   </div>
 </div>

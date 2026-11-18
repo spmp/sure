@@ -518,7 +518,7 @@ Rails.application.routes.draw do
       post :move, on: :collection
     end
 
-    resource :planner, only: :show, controller: "budget_planners"
+    resource :planner, only: %i[show update], controller: "budget_planners"
   end
 
   resources :goals do

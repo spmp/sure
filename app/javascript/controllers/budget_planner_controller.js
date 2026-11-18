@@ -9,14 +9,29 @@ const UNCATEGORIZED = "uncategorized";
 // month by month, so a node's average and median are taken over its own
 // monthly totals — summing children's medians would not give the parent's.
 export default class extends Controller {
-  static targets = ["circles", "history", "historyTitle", "panel"];
-  static values = { history: Object, labels: Object };
+  static targets = [
+    "circles",
+    "history",
+    "historyTitle",
+    "panel",
+    "budgetTotal",
+    "incomeSlot",
+    "remaining",
+    "remainingRow",
+    "apply",
+  ];
+  static values = { history: Object, plan: Object, labels: Object };
 
+  // Amount per top-level category id (and UNCATEGORIZED), plus the
+  // expected income. Kept here so redrawing the panel keeps edits.
+  #amounts = null;
+  #expectedIncome = 0;
   #hidden = new Set();
   #selected = null;
   #resizeObserver = null;
 
   connect() {
+    this.#startAmounts();
     this.#draw();
     this.#resizeObserver = new ResizeObserver(() => this.#drawCharts());
     this.#resizeObserver.observe(this.circlesTarget);
@@ -37,6 +52,139 @@ export default class extends Controller {
     const id = event.currentTarget.dataset.nodeId;
     this.#selected = this.#selected === id ? null : id;
     this.#draw();
+  }
+
+  fill(event) {
+    this.#fillAmounts(event.currentTarget.dataset.source);
+    this.#draw();
+  }
+
+  editAmount(event) {
+    const input = event.currentTarget;
+    this.#amounts.set(input.dataset.nodeId, this.#parse(input.value));
+    this.#markInvalid(input);
+    this.#updateTotals();
+  }
+
+  editIncome(event) {
+    this.#expectedIncome = this.#parse(event.currentTarget.value);
+    this.#updateTotals();
+  }
+
+  // --- amounts ---
+
+  // A budget that already has amounts starts from them; a new one starts
+  // from the history average.
+  #startAmounts() {
+    const plan = this.planValue;
+    this.#amounts = new Map();
+    this.#fillAmounts(plan.initialized ? "current" : "average");
+    this.#expectedIncome = Math.round(
+      plan.expected_income ?? d3.sum(this.#incomeRows, (r) => r.average),
+    );
+  }
+
+  #fillAmounts(source) {
+    const plan = this.planValue;
+    for (const top of this.#tree) {
+      // Only listed categories get an input; the rest keep their amount.
+      if (!this.#budgetable(top) || top.total <= 0) continue;
+      let amount;
+      if (source === "current") {
+        amount =
+          top.id === UNCATEGORIZED
+            ? (plan.uncategorized ?? top.average)
+            : plan.amounts[top.id];
+      } else {
+        amount = top[source];
+      }
+      this.#amounts.set(top.id, Math.round(amount || 0));
+    }
+  }
+
+  #budgetable(top) {
+    return top.id === UNCATEGORIZED || top.id in this.planValue.amounts;
+  }
+
+  #parse(value) {
+    const number = Number.parseFloat(String(value).replace(/[^0-9.-]/g, ""));
+    return Number.isFinite(number) ? number : 0;
+  }
+
+  #minimum(id) {
+    return this.planValue.minimums?.[id] || 0;
+  }
+
+  #markInvalid(input) {
+    const id = input.dataset.nodeId;
+    const invalid = this.#amounts.get(id) < this.#minimum(id);
+    input.setAttribute("aria-invalid", String(invalid));
+    input.classList.toggle("text-destructive", invalid);
+    const note = input.closest("li")?.querySelector("[data-minimum-note]");
+    note?.classList.toggle("hidden", !invalid);
+  }
+
+  // Top-level categories not listed (no spending in the range) keep their
+  // current amount, so they still count towards the total.
+  #budgetTotal() {
+    const plan = this.planValue;
+    const unlisted = Object.entries(plan.amounts)
+      .filter(([id]) => !this.#amounts.has(id))
+      .reduce((sum, [, amount]) => sum + amount, 0);
+    return d3.sum([...this.#amounts.values()]) + unlisted;
+  }
+
+  #updateTotals() {
+    const money = this.#money;
+    const total = this.#budgetTotal();
+    const remaining = this.#expectedIncome - total;
+    this.budgetTotalTarget.textContent = money.format(total);
+    this.remainingTarget.textContent = money.format(remaining);
+    this.remainingRowTarget.classList.toggle("bg-success/10", remaining >= 0);
+    this.remainingRowTarget.classList.toggle("text-success", remaining >= 0);
+    this.remainingRowTarget.classList.toggle(
+      "bg-destructive/10",
+      remaining < 0,
+    );
+    this.remainingRowTarget.classList.toggle("text-destructive", remaining < 0);
+
+    if (this.hasApplyTarget) {
+      const invalid = [...this.#amounts].some(
+        ([id, amount]) => amount < this.#minimum(id),
+      );
+      this.applyTarget.disabled = invalid;
+    }
+  }
+
+  #amountField(id, name, value, label) {
+    if (!this.planValue.editable) {
+      const span = document.createElement("span");
+      span.className = "shrink-0 tabular-nums font-medium text-primary";
+      span.textContent = this.#money.format(value);
+      return span;
+    }
+
+    const wrapper = document.createElement("div");
+    wrapper.className = "form-field w-28 shrink-0";
+    const input = document.createElement("input");
+    input.type = "number";
+    input.min = "0";
+    input.step = "1";
+    input.inputMode = "numeric";
+    input.name = name;
+    input.value = value;
+    input.id = name === "plan[expected_income]" ? "plan_expected_income" : "";
+    input.className = "form-field__input text-right tabular-nums";
+    input.setAttribute("aria-label", label);
+    if (id) {
+      input.dataset.nodeId = id;
+      input.dataset.action = "input->budget-planner#editAmount";
+    } else {
+      input.dataset.action = "input->budget-planner#editIncome";
+    }
+    wrapper.append(input);
+    if (id) queueMicrotask(() => this.#markInvalid(input));
+    return wrapper;
   }
 
   // --- data ---
@@ -351,6 +499,15 @@ export default class extends Controller {
     const panel = this.panelTarget;
     panel.innerHTML = "";
 
+    this.incomeSlotTarget.replaceChildren(
+      this.#amountField(
+        null,
+        "plan[expected_income]",
+        this.#expectedIncome,
+        this.#label("income"),
+      ),
+    );
+
     const active = tree.filter((top) => top.total > 0);
     const inactive = tree.filter((top) => top.total <= 0);
 
@@ -403,6 +560,8 @@ export default class extends Controller {
       p.textContent = unused.map((n) => n.name).join(", ");
       panel.append(p);
     }
+
+    this.#updateTotals();
   }
 
   #row(node, money, depth, hideable = true) {
@@ -429,10 +588,41 @@ export default class extends Controller {
     }
 
     const values = document.createElement("span");
-    values.className = "shrink-0 tabular-nums text-secondary whitespace-nowrap";
+    values.className = "block text-xs tabular-nums text-subdued";
     values.textContent = `${money.format(node.average)} · ${money.format(node.median)}`;
 
-    li.append(dot, name, values);
+    const text = document.createElement("div");
+    text.className = "min-w-0 flex-1";
+    name.classList.remove("flex-1");
+    name.classList.add("block", "max-w-full");
+    text.append(name, values);
+
+    li.append(dot, text);
+
+    if (depth === 0 && hideable && this.#budgetable(node)) {
+      const fieldName =
+        node.id === UNCATEGORIZED
+          ? "plan[uncategorized]"
+          : `plan[categories][${node.id}]`;
+      li.append(
+        this.#amountField(
+          node.id,
+          fieldName,
+          this.#amounts.get(node.id) ?? 0,
+          this.#label("amount_label", { name: node.name }),
+        ),
+      );
+      const minimum = this.#minimum(node.id);
+      if (minimum > 0) {
+        const note = document.createElement("span");
+        note.dataset.minimumNote = "";
+        note.className = "hidden block text-xs text-destructive";
+        note.textContent = this.#label("below_minimum", {
+          amount: money.format(minimum),
+        });
+        values.after(note);
+      }
+    }
 
     if (hideable) {
       const toggle = document.createElement("button");

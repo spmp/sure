@@ -55,4 +55,26 @@ class BudgetPlannerTest < ApplicationSystemTestCase
     assert_selector "[data-budget-planner-target='circles'] circle", minimum: 4
     save_screenshot(Rails.root.join("tmp/screenshots/budget_planner_mobile.png"))
   end
+
+  test "fills amounts from history and applies them to the budget" do
+    visit budget_planner_path(Budget.date_to_param(Date.current))
+
+    within("[data-budget-planner-target='form']") do
+      click_on "Average"
+      home = find("input[aria-label='Home costs budget per month']")
+      assert_equal "1500", home.value
+      home.fill_in(with: "1600")
+      fill_in "plan_expected_income", with: "4200"
+    end
+    save_screenshot(Rails.root.join("tmp/screenshots/budget_planner_seed.png"))
+
+    click_on "Apply to"
+    within("#confirm-dialog") { click_on "Apply" }
+
+    assert_text "now uses these amounts"
+    budget = Budget.find_by!(family: @user.family, start_date: Budget.period_for(Date.current, family: @user.family).first, user_id: [ nil, @user.id ])
+    home = budget.budget_categories.joins(:category).find_by!(categories: { name: "Home costs" })
+    assert_equal 1600, home.budgeted_spending
+    assert_equal 4200, budget.expected_income
+  end
 end

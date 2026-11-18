@@ -12,6 +12,19 @@ en:
       history_title: Month by month
       panel_title: Categories
       panel_columns: Average · median per month
+      fill_label: Fill amounts from
+      fill:
+        average: Average
+        median: Median
+        current: Current
+      budget_total: Budget total
+      expected_income: Expected income
+      remaining: Remaining
+      apply: Apply to %{budget}
+      confirm:
+        title: Apply to %{budget}?
+        body: The amounts shown replace this budget's amounts for these categories, its total and its expected income. Subcategories keep their own amounts. Other months aren't changed.
+        button: Apply
       js:
         spending: Spending
         income: Income
@@ -24,3 +37,12 @@ en:
         total: Total
         empty: No spending in this range yet.
         all_categories: All categories
+        below_minimum: "At least %{amount}: its subcategories' own amounts"
+        amount_label: "%{name} budget per month"
+    update:
+      applied: The %{budget} budget now uses these amounts.
+    plan_application:
+      errors:
+        unknown_category: The plan includes a category that isn't a top-level category in this budget.
+        below_subcategories: A category can't be budgeted below its subcategories' own amounts.
+        invalid_amount: Amounts must be zero or more.
