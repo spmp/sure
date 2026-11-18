@@ -186,6 +186,12 @@ class IncomeStatement
   # dashboard widget) should build their options from this, not a broader
   # "accessible accounts" list, or selecting an ineligible account silently
   # computes to zero instead of the totals it actually appears in elsewhere.
+  # Net-able income and expense totals per category for each of `periods`
+  # ([[start_date, end_date], ...]); see CategoryPeriodTotals.
+  def category_period_totals(periods:)
+    CategoryPeriodTotals.new(family, periods: periods, account_ids: included_account_ids).call
+  end
+
   def eligible_accounts
     @eligible_accounts ||= begin
       scope = family.accounts.visible.included_in_reports

@@ -284,6 +284,15 @@ class Budget < ApplicationRecord
     BudgetShare.exists?(owner_id: user_id, viewer_id: user.id, permission: "read_write")
   end
 
+  def planning_history(months: 6)
+    Budget::PlanningHistory.new(self, months: months)
+  end
+
+  # Scoped like the rest of the budget's figures (see #income_statement_accounts).
+  def category_period_totals(periods)
+    income_statement.category_period_totals(periods: periods)
+  end
+
   def most_recent_initialized_budget
     family.budgets
       .includes(:budget_categories)
