@@ -1,0 +1,48 @@
+
+<div class="@container pb-6 lg:pb-12 space-y-4"
+     data-controller="budget-planner"
+     data-budget-planner-history-value="<%= @history.as_json.to_json %>"
+     data-budget-planner-labels-value="<%= t(".js").to_json %>">
+  <div class="flex flex-wrap items-center gap-3">
+    <div>
+      <h1 class="text-xl font-medium text-primary"><%= t(".title") %></h1>
+      <p class="text-sm text-secondary">
+        <%= t(".subtitle",
+              start_date: l(@history.periods.first.first, format: :long),
+              end_date: l(@history.periods.last.last, format: :long),
+              budget: @budget.name) %>
+      </p>
+    </div>
+
+    <div class="ml-auto">
+      <%= render DS::SegmentedControl.new(aria_label: t(".range_label"), class: "bg-surface-inset") do |control| %>
+        <% BudgetPlannersController::MONTH_OPTIONS.each do |months| %>
+          <% control.with_segment(t(".months", count: months), active: months == @months,
+               href: budget_planner_path(@budget, months: months, **budget_owner_query)) %>
+        <% end %>
+      <% end %>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-1 @4xl:grid-cols-5 gap-4">
+    <div class="@4xl:col-span-3 space-y-4">
+      <%= render DS::Card.new do %>
+        <h2 class="text-sm font-medium text-secondary mb-2"><%= t(".circles_title") %></h2>
+        <div class="w-full aspect-square max-w-xl mx-auto" data-budget-planner-target="circles"></div>
+      <% end %>
+
+      <%= render DS::Card.new do %>
+        <h2 class="text-sm font-medium text-secondary mb-2"><%= t(".history_title") %></h2>
+        <div class="w-full h-56" data-budget-planner-target="history"></div>
+      <% end %>
+    </div>
+
+    <%= render DS::Card.new(class: "@4xl:col-span-2") do %>
+      <div class="mb-3">
+        <h2 class="text-sm font-medium text-secondary"><%= t(".panel_title") %></h2>
+        <p class="text-xs text-subdued"><%= t(".panel_columns") %></p>
+      </div>
+      <div data-budget-planner-target="panel" class="text-sm"></div>
+    <% end %>
+  </div>
+</div>

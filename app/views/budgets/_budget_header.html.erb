@@ -40,7 +40,15 @@
     <% end %>
   <% end %>
 
-  <div class="ml-auto">
+  <div class="ml-auto flex items-center gap-2">
+    <% if preview_features_enabled? %>
+      <%= render DS::Link.new(
+          text: t(".plan_from_history"),
+          variant: "outline",
+          icon: "chart-pie",
+          href: budget_planner_path(budget, **budget_owner_query),
+      ) %>
+    <% end %>
     <%= render DS::Link.new(
         text: t(".today"),
         variant: "outline",

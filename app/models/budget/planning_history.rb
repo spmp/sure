@@ -33,6 +33,7 @@ class Budget::PlanningHistory
       currency: family.currency,
       periods: periods.map { |starts_on, ends_on| { start_date: starts_on, end_date: ends_on } },
       categories: categories,
+      uncategorized: { name: Category.uncategorized.name, color: Category::UNCATEGORIZED_COLOR },
       spending: spending,
       income: income
     }

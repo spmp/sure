@@ -1,0 +1,26 @@
+---
+en:
+  budget_planners:
+    show:
+      title: Plan from history
+      subtitle: "%{start_date} to %{end_date}, scoped like the %{budget} budget. The current month is left out."
+      range_label: History range
+      months:
+        one: "%{count} month"
+        other: "%{count} months"
+      circles_title: Where the money went
+      history_title: Month by month
+      panel_title: Categories
+      panel_columns: Average · median per month
+      js:
+        spending: Spending
+        income: Income
+        uncategorized: Uncategorized
+        direct: "%{name} (direct)"
+        inactive: No spending in this range
+        hidden: Hidden
+        show: Show
+        hide: Hide
+        total: Total
+        empty: No spending in this range yet.
+        all_categories: All categories

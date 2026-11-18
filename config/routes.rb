@@ -517,6 +517,8 @@ Rails.application.routes.draw do
     resources :budget_categories, only: %i[index show update] do
       post :move, on: :collection
     end
+
+    resource :planner, only: :show, controller: "budget_planners"
   end
 
   resources :goals do
