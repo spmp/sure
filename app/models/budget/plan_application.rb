@@ -36,6 +36,7 @@ class Budget::PlanApplication
       editable: budget.editable_by?(user),
       initialized: budget.initialized?,
       budget_name: budget.name,
+      start_date: budget.start_date,
       amounts: parents.to_h { |bc| [ bc.category_id, (bc.budgeted_spending || 0).to_f ] },
       minimums: parents.to_h do |bc|
         own = rows.select { |child| child.category.parent_id == bc.category_id && !child.inherits_parent_budget? }

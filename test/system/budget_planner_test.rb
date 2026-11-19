@@ -135,6 +135,53 @@ class BudgetPlannerTest < ApplicationSystemTestCase
     assert_empty plan.groups
   end
 
+  test "the spending chart switches views, hides categories, projects ahead and enlarges" do
+    page.driver.browser.manage.window.resize_to(1600, 1400)
+    visit six_months
+    chart = "[data-budget-planner-target='history']"
+
+    within("[data-budget-planner-target='chartChips']") { assert_selector "button[aria-pressed='true']", count: 3 }
+    assert_selector "#{chart} svg path[stroke-dasharray='6 4']" # a budget line
+
+    within("[data-budget-planner-target='chartCard']") { click_on "One each" }
+    assert_selector "#{chart} .grid > div", count: 3
+    within("[data-budget-planner-target='chartChips']") { click_on "Home costs" }
+    assert_selector "#{chart} .grid > div", count: 2
+
+    within("[data-budget-planner-target='chartCard']") { click_on "Month grid" }
+    assert_selector "#{chart} svg rect[rx='3']", minimum: 12
+
+    amount_field("Food shopping").fill_in(with: "600")
+    within("[data-budget-planner-target='chartCard']") do
+      click_on "% of budget"
+      find("summary", text: "Chart options").click
+      click_on "12 months"
+    end
+    assert_selector "#{chart} svg text", text: "forecast"
+
+    within("[data-budget-planner-target='chartCard']") { click_on "Lines" }
+    save_screenshot(Rails.root.join("tmp/screenshots/budget_planner_chart.png"))
+    find("button[aria-label='Enlarge chart']").click
+    assert_selector "[data-budget-planner-target='chartCard'].fixed"
+    save_screenshot(Rails.root.join("tmp/screenshots/budget_planner_chart_enlarged.png"))
+    find("body").send_keys(:escape)
+    assert_no_selector "[data-budget-planner-target='chartCard'].fixed"
+  end
+
+  test "the budget line follows the amount typed in the panel" do
+    visit six_months
+    within("[data-budget-planner-target='chartCard']") { click_on "One each" }
+    home_chart = "[data-budget-planner-target='history'] .grid > div:has(button[type='button'])"
+    first_budget_line = lambda do
+      find(home_chart, text: "Home costs").find("svg path[stroke-dasharray='6 4']")[:d]
+    end
+    before = first_budget_line.call
+
+    amount_field("Home costs").fill_in(with: "3000")
+
+    assert_not_equal before, first_budget_line.call
+  end
+
   test "fill leaves typed amounts alone, the menu resets one, and apply saves them" do
     visit six_months
 

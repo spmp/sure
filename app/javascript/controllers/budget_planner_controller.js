@@ -1,11 +1,13 @@
 import { Controller } from "@hotwired/stimulus";
 import * as d3 from "d3";
+import { drawPlannerChart, plannerChartTooltip } from "utils/planner_chart";
 
 const UNCATEGORIZED = "uncategorized";
 const DIRECT = ":direct";
 const STORE = {
   hidden: "budgetPlanner.panelHidden",
   sort: "budgetPlanner.sort",
+  chart: "budgetPlanner.chart",
 };
 const LONG_PRESS_MS = 550;
 
@@ -60,6 +62,15 @@ export default class extends Controller {
     "appearanceColors",
     "appearanceColorNote",
     "iconSprites",
+    "chartCard",
+    "chartControl",
+    "enlargeButton",
+    "growthInput",
+    "growthOutput",
+    "chartChips",
+    "chartOverview",
+    "chartNote",
+    "chartKey",
   ];
   static values = {
     history: Object,
@@ -87,6 +98,24 @@ export default class extends Controller {
   #menuReturnFocus = null;
   #appearanceFor = null;
   #resizeObserver = null;
+  // Chart options (remembered per browser), the categories it shows, the
+  // months in view and the hovered month.
+  #chart = {
+    view: "lines",
+    rolling: false,
+    fit: "yearly",
+    fitFor: "focus",
+    shade: "focus",
+    cycles: true,
+    colourAll: false,
+    ahead: 0,
+    growth: 0,
+    compound: true,
+  };
+  #chartShown = null;
+  #chartWindow = null;
+  #chartHover = null;
+  #enlarged = false;
 
   connect() {
     this.#plan = this.draftValue.plan
@@ -96,6 +125,7 @@ export default class extends Controller {
     this.#sort = this.#read(STORE.sort) || "spending";
     if (this.hasSortSelectTarget) this.sortSelectTarget.value = this.#sort;
 
+    this.#loadChartOptions();
     this.#startAmounts();
     this.#applyLayout();
     this.#draw();
@@ -112,6 +142,7 @@ export default class extends Controller {
     document.removeEventListener("pointerdown", this.closeMenus);
     document.removeEventListener("keydown", this.closeMenus);
     this.#closeMenu();
+    plannerChartTooltip.remove();
   }
 
   // --- actions: page ---
@@ -238,6 +269,7 @@ export default class extends Controller {
     this.#edited.add(input.dataset.nodeId);
     this.#markInvalid(input);
     this.#updateTotals();
+    this.#scheduleChart();
   }
 
   editIncome(event) {
@@ -276,12 +308,67 @@ export default class extends Controller {
     this.closeAppearance();
     if (event.type === "keydown") {
       this.closeRemove();
+      if (this.#enlarged) this.toggleEnlarge();
       if (
         this.hasNewPlanFormTarget &&
         !this.newPlanFormTarget.classList.contains("hidden")
       )
         this.toggleNewPlan();
     }
+  }
+
+  // --- actions: chart ---
+
+  chartOption(event) {
+    const { option, value } = event.currentTarget.dataset;
+    const parsed =
+      value === "true"
+        ? true
+        : value === "false"
+          ? false
+          : /^\d+$/.test(value)
+            ? Number(value)
+            : value;
+    this.#chart[option] = parsed;
+    this.#saveChartOptions();
+    this.#drawChart();
+  }
+
+  chartGrowth(event) {
+    this.#chart.growth = Number(event.currentTarget.value);
+    this.#saveChartOptions();
+    this.#drawChart();
+  }
+
+  chartPick(event) {
+    const parents = this.#chartParents(this.#tree);
+    const pick = event.currentTarget.dataset.pick;
+    if (pick === "all") this.#chartShown = new Set(parents.map((p) => p.id));
+    else if (pick === "none") this.#chartShown = new Set();
+    else this.#chartShown = new Set(this.#topParents(parents));
+    this.#drawChart();
+  }
+
+  toggleEnlarge() {
+    this.#enlarged = !this.#enlarged;
+    const card = this.chartCardTarget;
+    for (const cls of ["fixed", "inset-4", "z-40", "overflow-y-auto"])
+      card.classList.toggle(cls, this.#enlarged);
+    this.enlargeButtonTarget.setAttribute(
+      "aria-pressed",
+      String(this.#enlarged),
+    );
+    this.#drawChart();
+  }
+
+  #loadChartOptions() {
+    try {
+      Object.assign(this.#chart, JSON.parse(this.#read(STORE.chart) || "{}"));
+    } catch {}
+  }
+
+  #saveChartOptions() {
+    this.#write(STORE.chart, JSON.stringify(this.#chart));
   }
 
   // --- plan state ---
@@ -849,7 +936,7 @@ export default class extends Controller {
 
   #drawCharts(tree = this.#tree) {
     this.#drawCircles(tree);
-    this.#drawHistory(tree);
+    this.#drawChart(tree);
     this.#drawExcludedNote(tree);
   }
 
@@ -1103,117 +1190,229 @@ export default class extends Controller {
     return d.depth === 1 && d.data.id === this.#selected;
   }
 
-  #drawHistory(tree) {
-    const container = this.historyTarget;
-    container.innerHTML = "";
-    const width = container.clientWidth;
-    const height = container.clientHeight || 224;
-    if (!width) return;
+  // --- spending over time ---
 
+  // Parent categories the chart can show: those listed, not excluded and
+  // not hidden. Budget lines follow the amounts in the panel.
+  #chartParents(tree) {
+    return this.#listedTops(tree)
+      .filter((top) => !top.excluded && !this.#hidden.has(top.id))
+      .map((top) => ({
+        id: top.id,
+        name: top.name,
+        color: top.color,
+        series: top.analysis,
+        total: top.total,
+        budget: this.#amounts.has(top.id) ? this.#amounts.get(top.id) : null,
+      }));
+  }
+
+  #topParents(parents) {
+    return parents
+      .filter((p) => p.total > 0)
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5)
+      .map((p) => p.id);
+  }
+
+  // `hoverOnly`: just the hovered month changed, so the zoom strip stays.
+  #scheduleChart(hoverOnly = false) {
+    cancelAnimationFrame(this.chartFrame);
+    this.chartFrame = requestAnimationFrame(() =>
+      this.#drawChart(this.#tree, hoverOnly),
+    );
+  }
+
+  #monthIndex(date) {
+    const [year, month] = String(date).split("-").map(Number);
+    return year * 12 + month - 1;
+  }
+
+  #drawChart(tree = this.#tree, hoverOnly = false) {
+    const periods = this.historyValue.periods;
+    const history = periods.length;
+    const first = new Date(`${periods[0].start_date}T00:00:00`);
+    const months = d3
+      .range(history + 12)
+      .map((i) => new Date(first.getFullYear(), first.getMonth() + i, 1));
+    const parents = this.#chartParents(tree);
+    this.#chartShown ??= new Set(this.#topParents(parents));
+    if (!this.#chartWindow || this.#chartWindow[1] > history - 1)
+      this.#chartWindow = [0, history - 1];
+    // The selected category, or else the biggest one shown.
+    const focus = parents.some((p) => p.id === this.#selected)
+      ? this.#selected
+      : (parents
+          .filter((p) => this.#chartShown?.has(p.id))
+          .sort((a, b) => b.total - a.total)[0]?.id ?? null);
+    if (focus) this.#chartShown.add(focus);
+
+    this.#syncChartControls();
+    this.#renderChartChips(parents, focus);
     const selected = tree.find((top) => top.id === this.#selected);
     this.historyTitleTarget.textContent = selected
       ? selected.name
       : this.#label("all_categories");
     this.historyTitleTarget.style.color = selected ? selected.color : "";
-    const shown = tree.filter((top) => !this.#hidden.has(top.id));
-    const spend = selected
-      ? selected.analysis
-      : d3
-          .range(this.#periodCount)
-          .map((i) => d3.sum(shown, (t) => t.analysis[i]));
-    const income = selected
-      ? null
-      : d3
-          .range(this.#periodCount)
-          .map((i) => d3.sum(this.#includedIncome, (r) => r.series[i]));
 
-    const periods = this.historyValue.periods.map(
-      (p) => new Date(p.start_date),
+    const options = {
+      ...this.#chart,
+      anchor:
+        this.#monthIndex(this.planValue.start_date) -
+        this.#monthIndex(periods[0].start_date),
+    };
+    const chart = drawPlannerChart(
+      this.historyTarget,
+      hoverOnly ? null : this.chartOverviewTarget,
+      {
+        view: this.#chart.view,
+        months,
+        history,
+        parents,
+        shown: this.#chartShown,
+        focus,
+        window: this.#chartWindow,
+        options,
+        hover: this.#chartHover,
+        money: this.#money,
+        labels: this.labelsValue,
+        tall: this.#enlarged,
+        onFocus: (id) => {
+          this.#selected = id;
+          this.#draw();
+        },
+        onHover: (index) => {
+          if (this.#chartHover === index) return;
+          this.#chartHover = index;
+          this.#scheduleChart(true);
+        },
+        onWindow: (window) => {
+          this.#chartWindow = window;
+          this.#drawChart();
+        },
+      },
     );
-    const margin = { top: 8, right: 8, bottom: 22, left: 56 };
-    const x = d3
-      .scaleBand()
-      .domain(d3.range(periods.length))
-      .range([margin.left, width - margin.right])
-      .padding(0.3);
-    const y = d3
-      .scaleLinear()
-      .domain([0, d3.max([...spend, ...(income || [])]) || 1])
-      .nice()
-      .range([height - margin.bottom, margin.top]);
-    const every = Math.ceil(
-      periods.length / Math.max(1, Math.floor(width / 48)),
+    this.#drawChartNote(
+      parents.find((p) => p.id === focus),
+      chart,
+      history,
     );
-    const tickFormat = d3.timeFormat(periods.length > 12 ? "%b %y" : "%b");
+    this.#drawChartKey();
+  }
 
-    const svg = d3
-      .select(container)
-      .append("svg")
-      .attr("width", width)
-      .attr("height", height)
-      .attr("role", "img")
-      .attr(
-        "aria-label",
-        selected ? selected.name : this.#label("all_categories"),
-      );
-
-    svg
-      .append("g")
-      .attr("transform", `translate(0,${height - margin.bottom})`)
-      .attr("class", "text-subdued")
-      .call(
-        d3
-          .axisBottom(x)
-          .tickValues(d3.range(periods.length).filter((i) => i % every === 0))
-          .tickFormat((i) => tickFormat(periods[i]))
-          .tickSizeOuter(0),
-      );
-    svg
-      .append("g")
-      .attr("transform", `translate(${margin.left},0)`)
-      .attr("class", "text-subdued")
-      .call(
-        d3
-          .axisLeft(y)
-          .ticks(4)
-          .tickFormat((v) => this.#money.format(v)),
-      )
-      .call((g) => g.select(".domain").remove());
-
-    svg
-      .append("g")
-      .selectAll("rect")
-      .data(spend)
-      .join("rect")
-      .attr("x", (_, i) => x(i))
-      .attr("y", (v) => y(v))
-      .attr("width", x.bandwidth())
-      .attr("height", (v) => y(0) - y(v))
-      .attr("rx", 2)
-      .attr("fill", selected ? selected.color : "currentColor")
-      .attr("class", selected ? null : "text-secondary")
-      .append("title")
-      .text(
-        (v, i) =>
-          `${d3.timeFormat("%b %Y")(periods[i])}: ${this.#money.format(v)}`,
-      );
-
-    if (income) {
-      svg
-        .append("path")
-        .datum(income)
-        .attr("fill", "none")
-        .attr("stroke", "currentColor")
-        .attr("stroke-width", 2)
-        .attr("class", "text-success")
-        .attr(
-          "d",
-          d3
-            .line()
-            .x((_, i) => x(i) + x.bandwidth() / 2)
-            .y((v) => y(v)),
-        );
+  #syncChartControls() {
+    for (const button of this.chartControlTargets) {
+      const { option, value } = button.dataset;
+      const active = String(this.#chart[option]) === value;
+      button.classList.toggle("segmented-control__segment--active", active);
+      button.setAttribute("aria-pressed", String(active));
     }
+    if (this.hasGrowthInputTarget) {
+      this.growthInputTarget.value = this.#chart.growth;
+      this.growthOutputTarget.textContent = this.#label("growth_value", {
+        value: this.#chart.growth,
+      });
+    }
+  }
+
+  #renderChartChips(parents, focus) {
+    const shown = this.#chartShown;
+    this.chartChipsTarget.replaceChildren(
+      ...parents.map((p) => {
+        const chip = document.createElement("button");
+        chip.type = "button";
+        const on = shown.has(p.id);
+        chip.className = `inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs focus-ring ${on ? "border-secondary text-primary" : "border-subdued text-subdued"} ${p.id === focus ? "ring-2 ring-current" : ""}`;
+        chip.setAttribute("aria-pressed", String(on));
+        const swatch = document.createElement("span");
+        swatch.className = "w-2.5 h-2.5 rounded-full bg-surface-inset";
+        if (on) swatch.style.backgroundColor = p.color;
+        chip.append(swatch, document.createTextNode(p.name));
+        let last = 0;
+        chip.addEventListener("click", (event) => {
+          const now = Date.now();
+          if (event.altKey || now - last < 350)
+            this.#chartShown = new Set([p.id]);
+          else if (shown.has(p.id)) shown.delete(p.id);
+          else shown.add(p.id);
+          last = now;
+          if (this.#chartShown.has(p.id)) this.#selected = p.id;
+          else if (this.#selected === p.id) this.#selected = null;
+          this.#draw();
+        });
+        return chip;
+      }),
+    );
+  }
+
+  #drawChartNote(focus, chart, history) {
+    const notes = [];
+    const model = focus && chart.input.parents.find((p) => p.id === focus.id);
+    if (model) {
+      const cycle = model.cycle
+        ? this.#label("chart.cycle", { months: model.cycle.length })
+        : this.#label("chart.no_cycle");
+      notes.push(
+        this.#chart.fit === "off"
+          ? this.#label("chart.focus_note_no_fit", { name: focus.name, cycle })
+          : this.#label("chart.focus_note", {
+              name: focus.name,
+              cycle,
+              direction: this.#label(
+                model.model.slope >= 0 ? "chart.up" : "chart.down",
+              ),
+              amount: this.#money.format(Math.abs(model.model.slope * 12)),
+            }),
+      );
+    }
+    if (this.#chart.fit === "yearly" && history < 24)
+      notes.push(this.#label("chart.yearly_needs_history"));
+    const excluded = this.#listedTops(this.#tree).filter(
+      (t) => t.excluded || this.#hidden.has(t.id),
+    );
+    if (excluded.length)
+      notes.push(
+        this.#label("chart.excluded_left_out", {
+          names: excluded.map((t) => t.name).join(", "),
+        }),
+      );
+    this.chartNoteTarget.textContent = notes.join(" ");
+  }
+
+  #drawChartKey() {
+    const view = this.#chart.view;
+    const items = {
+      lines: ["actual", "fitted", "budget", "over", "under", "cycle"],
+      percent: ["actual", "fitted"],
+      multiples: ["actual", "fitted", "budget", "over", "under", "cycle"],
+      grid: ["over", "under", "within", "no_budget", "cycle"],
+    }[view];
+    if (this.#chart.ahead) items.push("forecast");
+    const swatch = {
+      actual: "border-t-2 border-current text-primary w-5",
+      fitted: "border-t-2 border-dotted border-current text-secondary w-5",
+      budget: "border-t border-dashed border-current text-primary w-5",
+      over: "h-2.5 w-4 rounded-sm bg-current text-destructive opacity-40",
+      under: "h-2.5 w-4 rounded-sm bg-current text-success opacity-30",
+      within: "h-2.5 w-4 rounded-sm bg-surface-inset",
+      no_budget: "h-2.5 w-4 rounded-sm border border-dashed border-secondary",
+      cycle: "h-3 border-l border-current text-subdued",
+      forecast:
+        "h-2.5 w-4 rounded-sm bg-surface-inset border border-dashed border-secondary",
+    };
+    this.chartKeyTarget.replaceChildren(
+      ...items.map((key) => {
+        const item = document.createElement("span");
+        item.className = "inline-flex items-center gap-1.5";
+        const mark = document.createElement("span");
+        mark.className = `inline-block ${swatch[key]}`;
+        item.append(
+          mark,
+          document.createTextNode(this.#label(`chart.key.${key}`)),
+        );
+        return item;
+      }),
+    );
   }
 
   // --- panel ---

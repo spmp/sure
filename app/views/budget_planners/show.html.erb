@@ -69,12 +69,80 @@
         <p class="hidden mt-2 text-xs text-subdued" data-budget-planner-target="excludedNote"></p>
       <% end %>
 
-      <%= render DS::Card.new do %>
-        <h2 class="text-sm font-medium text-secondary mb-2">
-          <%= t(".history_title") %> ·
-          <span class="text-primary" data-budget-planner-target="historyTitle"><%= t(".js.all_categories") %></span>
-        </h2>
-        <div class="w-full h-56" data-budget-planner-target="history"></div>
+      <%= render DS::Card.new(data: { budget_planner_target: "chartCard" }) do %>
+        <div class="flex flex-wrap items-center gap-2 mb-3">
+          <h2 class="text-sm font-medium text-secondary">
+            <%= t(".history_title") %> ·
+            <span class="text-primary" data-budget-planner-target="historyTitle"><%= t(".js.all_categories") %></span>
+          </h2>
+          <div class="ml-auto flex flex-wrap items-center gap-2">
+            <%= render DS::SegmentedControl.new(aria_label: t(".chart.view_label"), class: "bg-surface-inset") do |control| %>
+              <% %w[lines percent multiples grid].each do |view| %>
+                <% control.with_segment(t(".chart.views.#{view}"), data: { action: "budget-planner#chartOption", option: "view", value: view, budget_planner_target: "chartControl" }) %>
+              <% end %>
+            <% end %>
+            <%= render DS::Button.new(variant: "icon", icon: "maximize-2", type: "button",
+                  aria: { label: t(".chart.enlarge"), pressed: "false" }, title: t(".chart.enlarge"),
+                  data: { action: "budget-planner#toggleEnlarge", budget_planner_target: "enlargeButton" }) %>
+          </div>
+        </div>
+
+        <%= render DS::Disclosure.new(title: t(".chart.options"), align: :left, variant: :inline, body_class: "mt-2") do |disclosure| %>
+          <% disclosure.with_summary_content do %>
+            <span class="inline-flex items-center gap-1 text-sm text-secondary cursor-pointer"><%= icon "sliders-horizontal", size: "sm" %><%= t(".chart.options") %></span>
+          <% end %>
+          <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-secondary mb-2">
+            <% {
+                 rolling: %w[false true],
+                 fit: %w[off trend yearly],
+                 fit_for: %w[focus all],
+                 shade: %w[off focus all],
+                 cycles: %w[false true],
+                 colour_all: %w[false true],
+                 ahead: %w[0 6 12]
+               }.each do |option, values| %>
+              <span class="inline-flex items-center gap-2">
+                <span class="text-xs text-subdued"><%= t(".chart.option_labels.#{option}") %></span>
+                <%= render DS::SegmentedControl.new(aria_label: t(".chart.option_labels.#{option}"), class: "bg-surface-inset") do |control| %>
+                  <% values.each do |value| %>
+                    <% control.with_segment(t(".chart.option_values.#{option}.#{value}"), data: { action: "budget-planner#chartOption", option: option.to_s.camelize(:lower), value: value, budget_planner_target: "chartControl" }) %>
+                  <% end %>
+                <% end %>
+              </span>
+            <% end %>
+            <label class="inline-flex items-center gap-2" for="planner_growth">
+              <span class="text-xs text-subdued"><%= t(".chart.growth") %></span>
+              <input type="range" id="planner_growth" min="-5" max="15" step="1" value="0" autocomplete="off"
+                     class="w-28 accent-current" data-budget-planner-target="growthInput"
+                     data-action="input->budget-planner#chartGrowth">
+              <span class="tabular-nums w-16" data-budget-planner-target="growthOutput"></span>
+            </label>
+            <span class="inline-flex items-center gap-2">
+              <span class="text-xs text-subdued"><%= t(".chart.option_labels.compound") %></span>
+              <%= render DS::SegmentedControl.new(aria_label: t(".chart.option_labels.compound"), class: "bg-surface-inset") do |control| %>
+                <% %w[true false].each do |value| %>
+                  <% control.with_segment(t(".chart.option_values.compound.#{value}"), data: { action: "budget-planner#chartOption", option: "compound", value: value, budget_planner_target: "chartControl" }) %>
+                <% end %>
+              <% end %>
+            </span>
+          </div>
+        <% end %>
+
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-xs text-secondary">
+          <span class="text-subdued"><%= t(".chart.categories") %></span>
+          <% %w[top all none].each do |pick| %>
+            <button type="button" class="underline hover:text-primary focus-ring" data-action="budget-planner#chartPick" data-pick="<%= pick %>"><%= t(".chart.pick.#{pick}") %></button>
+          <% end %>
+          <span class="text-subdued"><%= t(".chart.chips_hint") %></span>
+        </div>
+        <div class="flex flex-wrap gap-1.5 mt-2" data-budget-planner-target="chartChips"></div>
+
+        <p class="text-xs text-subdued mt-3"><%= t(".chart.zoom_hint") %></p>
+        <svg class="w-full block" height="48" role="img" aria-label="<%= t(".chart.zoom_label") %>" data-budget-planner-target="chartOverview"></svg>
+
+        <p class="text-xs text-secondary mt-2 min-h-4" data-budget-planner-target="chartNote"></p>
+        <div class="w-full mt-1" data-budget-planner-target="history"></div>
+        <div class="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-secondary" data-budget-planner-target="chartKey"></div>
       <% end %>
     </div>
 

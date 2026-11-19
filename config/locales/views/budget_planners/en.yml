@@ -14,7 +14,62 @@ en:
       end_date: To
       show_range: Show
       circles_title: Where the money went
-      history_title: Month by month
+      history_title: Spending over time
+      chart:
+        view_label: Chart view
+        views:
+          lines: Lines
+          percent: "% of budget"
+          multiples: One each
+          grid: Month grid
+        enlarge: Enlarge chart
+        options: Chart options
+        option_labels:
+          rolling: Actual
+          fit: Fitted line
+          fit_for: Fitted for
+          shade: Budget shading
+          cycles: Cycle lines
+          colour_all: Other lines
+          ahead: Project ahead
+          compound: Growth curve
+        option_values:
+          rolling:
+            "false": Monthly
+            "true": Rolling 3 months
+          fit:
+            "off": "Off"
+            trend: Trend
+            yearly: Trend + yearly
+          fit_for:
+            focus: Focused
+            all: All
+          shade:
+            "off": "Off"
+            focus: Focused
+            all: All
+          cycles:
+            "false": "Off"
+            "true": "On"
+          colour_all:
+            "false": Grey
+            "true": Own colour
+          ahead:
+            "0": None
+            "6": 6 months
+            "12": 12 months
+          compound:
+            "true": Compound
+            "false": Linear
+        growth: Budget growth
+        categories: Parent categories
+        pick:
+          top: Top 5
+          all: All
+          none: None
+        chips_hint: Tap to show or hide; double-tap for only that one.
+        zoom_hint: Drag across the strip to zoom in on months; drag the selection to scroll.
+        zoom_label: Spending in every month; drag to choose the months shown
       plan_label: Plan
       current_categories: Current categories
       new_plan: New plan
@@ -77,6 +132,39 @@ en:
         total: Total
         empty: No spending in this range yet.
         all_categories: All categories
+        growth_value: "%{value}% a year"
+        chart:
+          pick: Pick a parent category above.
+          no_budgeted: None of the shown categories has a budget.
+          unbudgeted_left_out: Categories without a budget are left out.
+          forecast: forecast
+          no_budget: no budget
+          rolling_note: 3-month average
+          over_count: "over %{over} of %{of}"
+          cycle_short: "cycle %{months} mo"
+          columns:
+            actual: actual
+            fitted: fitted
+            budget: budget
+            vs_budget: vs budget
+          focus_note: "%{name}: %{cycle}. Its trend moves %{direction} about %{amount} a year."
+          focus_note_no_fit: "%{name}: %{cycle}."
+          cycle: "repeats about every %{months} months"
+          no_cycle: no clear cycle
+          up: up
+          down: down
+          yearly_needs_history: The yearly pattern needs 2 years of history; with less, the fitted line is the trend.
+          excluded_left_out: "Excluded from the chart: %{names}."
+          key:
+            actual: actual
+            fitted: fitted
+            budget: budget
+            over: over
+            under: under
+            cycle: cycle start
+            forecast: forecast
+            within: within 5% of budget
+            no_budget: no budget
         below_minimum: "At least %{amount}: its subcategories' own amounts"
         amount_label: "%{name} budget per month"
         more: "More for %{name}"
