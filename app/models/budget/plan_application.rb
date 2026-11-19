@@ -9,6 +9,11 @@
 # leaves after the top-level allocations, so the total is set to their sum
 # plus the Uncategorized amount. Top-level categories missing from the plan
 # keep their allocation and still count towards the total.
+#
+# With a draft, its grouping is applied first, in the same transaction, and
+# amounts may be keyed by a new group's key. A category the draft moves
+# under a parent shares that parent's budget (its own amount becomes zero).
+# Every apply first replaces the family's BudgetPlanBackup.
 class Budget::PlanApplication
   class Invalid < StandardError
     attr_reader :category_ids
@@ -39,8 +44,10 @@ class Budget::PlanApplication
     }
   end
 
-  def initialize(budget, categories:, uncategorized: 0, expected_income: nil)
+  def initialize(budget, categories:, uncategorized: 0, expected_income: nil, draft: nil, user: nil)
     @budget = budget
+    @draft = draft
+    @user = user
     @amounts = categories.to_h { |id, amount| [ id.to_s, to_amount(amount) ] }
     @uncategorized = to_amount(uncategorized)
     @expected_income = expected_income.nil? ? nil : to_amount(expected_income)
@@ -51,8 +58,13 @@ class Budget::PlanApplication
 
     Budget.transaction do
       budget.lock!
+      BudgetPlanBackup.capture!(budget, user: user)
+      moved_ids = apply_draft!
       budget.sync_budget_categories
       rows = budget.budget_categories.reload.includes(:category).lock.to_a
+      rows.each do |bc|
+        bc.update!(budgeted_spending: 0) if moved_ids.include?(bc.category_id) && bc.subcategory?
+      end
       parents = rows.reject(&:subcategory?).index_by { |bc| bc.category_id.to_s }
 
       unknown = amounts.keys - parents.keys
@@ -69,6 +81,7 @@ class Budget::PlanApplication
       attributes = { budgeted_spending: allocated + uncategorized }
       attributes[:expected_income] = expected_income unless expected_income.nil?
       budget.update!(attributes)
+      draft&.destroy!
     end
 
     # After commit: the calculator takes an advisory lock, and taking it while
@@ -79,7 +92,20 @@ class Budget::PlanApplication
   end
 
   private
-    attr_reader :budget, :amounts, :uncategorized, :expected_income
+    attr_reader :budget, :amounts, :uncategorized, :expected_income, :draft, :user
+
+    # Returns the ids of the categories the draft moved.
+    def apply_draft!
+      return [] unless draft
+      raise Invalid.new(:invalid_draft) unless draft.valid?
+
+      moved_ids = draft.moved_category_ids
+      group_ids = draft.apply!
+      @amounts = amounts.transform_keys { |key| group_ids.fetch(key, key) }
+      moved_ids
+    rescue BudgetPlanDraft::Stale
+      raise Invalid.new(:stale_draft)
+    end
 
     def validate_amounts!
       values = amounts.values + [ uncategorized, expected_income ].compact

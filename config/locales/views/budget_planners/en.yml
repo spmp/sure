@@ -41,8 +41,17 @@ en:
         amount_label: "%{name} budget per month"
     update:
       applied: The %{budget} budget now uses these amounts.
+    restores:
+      errors:
+        missing_categories: "Can't restore: %{names} no longer exists."
     plan_application:
       errors:
         unknown_category: The plan includes a category that isn't a top-level category in this budget.
         below_subcategories: A category can't be budgeted below its subcategories' own amounts.
         invalid_amount: Amounts must be zero or more.
+        stale_draft: Categories were changed elsewhere since this draft was made. Start the draft again from the current categories.
+        invalid_draft: The draft grouping isn't valid any more. Start it again from the current categories.
+  budget_planner_restores:
+    create:
+      none: There's no earlier setup to restore.
+      restored: Categories and budget amounts are back as they were before the last apply.

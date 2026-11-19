@@ -3,6 +3,8 @@
      data-controller="budget-planner"
      data-budget-planner-history-value="<%= @history.as_json.to_json %>"
      data-budget-planner-plan-value="<%= @plan_state.to_json %>"
+     data-budget-planner-draft-value="<%= @draft_state.to_json %>"
+     data-budget-planner-backup-value="<%= @backup_state.to_json %>"
      data-budget-planner-labels-value="<%= t(".js").to_json %>">
   <div class="flex flex-wrap items-center gap-3">
     <div>

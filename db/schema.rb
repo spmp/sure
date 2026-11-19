@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_16_120000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_18_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -374,6 +374,33 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_120000) do
     t.index ["budget_id"], name: "index_budget_categories_on_budget_id"
     t.index ["category_id"], name: "index_budget_categories_on_category_id"
     t.check_constraint "rolled_over_amount >= 0::numeric", name: "chk_budget_categories_rolled_over_amount_non_negative"
+  end
+
+  create_table "budget_plan_backups", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "family_id", null: false
+    t.uuid "budget_id"
+    t.uuid "created_by_id"
+    t.jsonb "categories", default: [], null: false
+    t.jsonb "budget_categories", default: [], null: false
+    t.decimal "budgeted_spending", precision: 19, scale: 4
+    t.decimal "expected_income", precision: 19, scale: 4
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["budget_id"], name: "index_budget_plan_backups_on_budget_id"
+    t.index ["created_by_id"], name: "index_budget_plan_backups_on_created_by_id"
+    t.index ["family_id"], name: "index_budget_plan_backups_on_family_id", unique: true
+  end
+
+  create_table "budget_plan_drafts", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "family_id", null: false
+    t.jsonb "parents", default: {}, null: false
+    t.jsonb "groups", default: [], null: false
+    t.string "categories_fingerprint", null: false
+    t.uuid "updated_by_id"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["family_id"], name: "index_budget_plan_drafts_on_family_id", unique: true
+    t.index ["updated_by_id"], name: "index_budget_plan_drafts_on_updated_by_id"
   end
 
   create_table "budget_shares", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -3169,6 +3196,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_16_120000) do
   add_foreign_key "brex_items", "families"
   add_foreign_key "budget_categories", "budgets", on_delete: :cascade
   add_foreign_key "budget_categories", "categories"
+  add_foreign_key "budget_plan_backups", "budgets", on_delete: :nullify
+  add_foreign_key "budget_plan_backups", "families"
+  add_foreign_key "budget_plan_backups", "users", column: "created_by_id", on_delete: :nullify
+  add_foreign_key "budget_plan_drafts", "families"
+  add_foreign_key "budget_plan_drafts", "users", column: "updated_by_id", on_delete: :nullify
   add_foreign_key "budget_shares", "users", column: "owner_id"
   add_foreign_key "budget_shares", "users", column: "viewer_id"
   add_foreign_key "budgets", "families"
