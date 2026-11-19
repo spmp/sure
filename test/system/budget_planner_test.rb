@@ -64,6 +64,23 @@ class BudgetPlannerTest < ApplicationSystemTestCase
     save_screenshot(Rails.root.join("tmp/screenshots/budget_planner_mobile.png"))
   end
 
+  test "a subcategory with no spending in the range still has a circle that can be dragged out" do
+    food = @family.categories.find_by!(name: "Food shopping")
+    dormant = @family.categories.create!(name: "Car payment", parent: food)
+    visit six_months
+
+    circle = find("g[data-node-id='#{dormant.id}']")
+    svg = find("[data-budget-planner-target='circles'] svg")
+    # Drop in the top-left corner, outside every circle.
+    page.driver.browser.action
+      .click_and_hold(circle.native)
+      .move_to(svg.native, -(svg.native.size.width / 2) + 4, -(svg.native.size.height / 2) + 4)
+      .release
+      .perform
+
+    within(panel) { assert_text "Moved" }
+  end
+
   test "fill leaves typed amounts alone, the menu resets one, and apply saves them" do
     visit six_months
 

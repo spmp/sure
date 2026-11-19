@@ -850,9 +850,15 @@ export default class extends Controller {
       .filter((top) => !this.#hidden.has(top.id))
       .map((top) => {
         if (this.#isSingle(top)) return { ...top, children: null };
-        const children = top.leaves.filter(
-          (leaf) => !this.#hidden.has(leaf.id) && leaf.total > 0,
-        );
+        // Subcategories with no spending in the range still get a small
+        // dashed circle, so they can be seen and dragged.
+        const children = top.leaves
+          .filter((leaf) => !this.#hidden.has(leaf.id))
+          .map((leaf) =>
+            leaf.total > 0
+              ? leaf
+              : { ...leaf, total: placeholder / 2, empty: true },
+          );
         if (top.group && !children.length)
           return { ...top, children: null, total: placeholder, empty: true };
         return { ...top, children, total: d3.sum(children, (c) => c.total) };
