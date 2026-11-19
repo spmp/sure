@@ -876,6 +876,15 @@ export default class extends Controller {
       .sum((d) => (d.children ? 0 : d.total))
       .sort((a, b) => b.value - a.value);
     d3.pack().size([size, size]).padding(4)(root);
+    // A lone child would fill its parent exactly; shrink it and move it down
+    // so both circles and the parent's name show.
+    for (const d of root.descendants()) {
+      if (d.depth !== 1 || d.children?.length !== 1) continue;
+      const [child] = d.children;
+      child.r = d.r * 0.62;
+      child.x = d.x;
+      child.y = d.y + d.r * 0.3;
+    }
 
     const svg = d3
       .select(container)
@@ -928,30 +937,66 @@ export default class extends Controller {
           `${d.data.name}: ${this.#money.format(d.data.average)} / ${this.#money.format(d.data.median)}`,
       );
 
-    // Big super categories always show their name. Smaller ones, and every
-    // subcategory, show theirs while the pointer is over that super
-    // category, or while it's selected (a tap on a phone).
+    // Labels sit on their own layer above every circle, in full, with an
+    // outline in the card's colour so they read over other circles. Parent
+    // names always show; subcategory names show while the pointer is over
+    // their parent, or while it's selected (a tap on a phone).
     const topOf = (d) => (d.depth === 1 ? d : d.parent);
-    const labels = node
-      .filter((d) => d.depth === 1 || d.r > 12)
-      .append("text")
+    const halo = getComputedStyle(
+      this.circlesTarget.closest(".bg-container") || this.circlesTarget,
+    ).backgroundColor;
+    const baseY = (d) =>
+      d.depth === 1 && d.children ? d.y - d.r + 16 : d.y + 4;
+    const labels = svg
+      .append("g")
+      .style("pointer-events", "none")
+      .selectAll("text")
+      .data(root.descendants().slice(1))
+      .join("text")
+      .attr("x", (d) => d.x)
       .attr("text-anchor", "middle")
-      .attr("y", (d) => (d.depth === 1 && d.children ? -d.r + 16 : 4))
+      .attr("paint-order", "stroke")
+      .attr("stroke", halo)
+      .attr("stroke-width", 4)
+      .attr("stroke-linejoin", "round")
       .attr("class", (d) =>
         d.depth === 1
           ? "fill-current text-primary text-xs font-medium"
           : "fill-current text-primary text-xs",
       )
-      .style("pointer-events", "none")
-      .text((d) => this.#fit(d.data.name, d.r));
-    const showLabels = (top) =>
-      labels.style("opacity", (d) =>
-        (d.depth === 1 && d.r > 34) ||
+      .text((d) => d.data.name);
+    const showLabels = (top) => {
+      const visible = (d) =>
+        d.depth === 1 ||
         topOf(d) === top ||
-        topOf(d).data.id === this.#selected
-          ? 1
-          : 0,
-      );
+        topOf(d).data.id === this.#selected;
+      labels.style("display", (d) => (visible(d) ? null : "none"));
+      // Move a label down a line while it overlaps one already placed.
+      const placed = [];
+      labels
+        .filter(visible)
+        .sort((a, b) => baseY(a) - baseY(b))
+        .each(function (d) {
+          const half = this.getComputedTextLength() / 2 + 2;
+          let y = baseY(d);
+          const overlaps = () =>
+            placed.some(
+              (p) =>
+                p.x0 < d.x + half &&
+                d.x - half < p.x1 &&
+                p.y0 < y + 3 &&
+                y - 11 < p.y1,
+            );
+          for (let tries = 0; overlaps() && tries < 8; tries++) y += 13;
+          placed.push({
+            x0: d.x - half,
+            x1: d.x + half,
+            y0: y - 11,
+            y1: y + 3,
+          });
+          d3.select(this).attr("y", y);
+        });
+    };
     showLabels(null);
     node
       .on("mouseenter", (_event, d) => showLabels(topOf(d)))
@@ -1004,12 +1049,6 @@ export default class extends Controller {
           else this.#drawCharts();
         }),
     );
-  }
-
-  // Shortens a name to roughly fit across a circle of radius `r`.
-  #fit(name, r) {
-    const chars = Math.max(3, Math.floor((r * 2 - 6) / 6.5));
-    return name.length > chars ? `${name.slice(0, chars - 1)}…` : name;
   }
 
   #nodeFor(tree, id) {
@@ -1632,9 +1671,8 @@ export default class extends Controller {
         );
       }
       items.push(
-        this.#menuItem(
-          this.#label(isGroup ? "menu.remove_group" : "menu.remove"),
-          () => this.#startRemove(node),
+        this.#menuItem(this.#label("menu.remove"), () =>
+          this.#startRemove(node),
         ),
       );
       items.push(this.#menuSeparator());
@@ -1667,7 +1705,13 @@ export default class extends Controller {
     const id = node.id;
     const category = this.#categoriesById.get(id);
     const children = this.#childrenOf(id);
-    const count = category?.transaction_count || 0;
+    // Its own transactions plus any the plan is already moving into it.
+    const count =
+      (category?.transaction_count || 0) +
+      d3.sum(
+        this.#incoming(id),
+        (source) => this.#categoriesById.get(source)?.transaction_count || 0,
+      );
     if (!children.length && !count) {
       this.#remove(id, null);
       return;
@@ -1752,6 +1796,13 @@ export default class extends Controller {
     this.#remove(id, target, newGroup);
   }
 
+  // Categories the plan removes by moving their transactions into `id`.
+  #incoming(id) {
+    return Object.entries(this.#plan?.removals || {})
+      .filter(([, target]) => target === id)
+      .map(([source]) => source);
+  }
+
   // Every category or new group the transactions could go to, by name.
   #transactionTargets(id) {
     return this.historyValue.categories
@@ -1767,8 +1818,11 @@ export default class extends Controller {
 
   #remove(id, target, newGroup = null) {
     const children = this.#childrenOf(id).map((c) => c.id);
+    const incoming = this.#incoming(id);
     this.#changePlan((plan) => {
       if (newGroup) plan.groups.push(newGroup);
+      // Transactions on their way into this category go where its own go.
+      for (const source of incoming) plan.removals[source] = target;
       for (const child of children) {
         const live = this.#categoriesById.get(child)?.parent_id ?? null;
         if (live === null) delete plan.parents[child];

@@ -81,6 +81,35 @@ class BudgetPlannerTest < ApplicationSystemTestCase
     within(panel) { assert_text "Moved" }
   end
 
+  test "removing a category that is receiving moved transactions asks where they go instead" do
+    visit six_months
+
+    menu_for("Loan interest")
+    click_on "Remove category…"
+    within(remove_dialog) do
+      select "New category…", from: "Move its 1 transactions to"
+      fill_in "Name for the new category", with: "Interest"
+      click_on "Remove"
+    end
+    assert_selector "[data-budget-planner-target='draftStatus']", text: "Plan saved"
+
+    menu_for("Interest")
+    click_on "Remove category…"
+    within(remove_dialog) do
+      select "Food shopping", from: "Move its 1 transactions to"
+      click_on "Remove"
+    end
+
+    within(panel) do
+      assert_no_text "Interest\n"
+      assert_text "→ Food shopping"
+    end
+    assert_selector "[data-budget-planner-target='draftStatus']", text: "Plan saved"
+    plan = @family.budget_plans.sole
+    assert_equal({ @loan_interest.id => @family.categories.find_by!(name: "Food shopping").id }, plan.removals)
+    assert_empty plan.groups
+  end
+
   test "fill leaves typed amounts alone, the menu resets one, and apply saves them" do
     visit six_months
 
@@ -243,6 +272,10 @@ class BudgetPlannerTest < ApplicationSystemTestCase
 
     def panel
       "[data-budget-planner-target='panel']"
+    end
+
+    def remove_dialog
+      "[data-budget-planner-target='removeDialog']"
     end
 
     def form
