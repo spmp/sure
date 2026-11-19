@@ -4,11 +4,10 @@
 #
 # Restore puts back the name, parent, colour and icon of every captured
 # category, and the budget's allocations, total and expected income.
-# Categories created since are kept (they may hold transactions now). If a
-# captured category has been deleted, nothing is restored.
+# Categories created since are kept (they may hold transactions now).
+# Categories deleted since (removed by a plan, or by hand) can't come back;
+# everything else is restored and #restore! returns their names.
 class BudgetPlanBackup < ApplicationRecord
-  class CannotRestore < StandardError; end
-
   belongs_to :family
   belongs_to :budget, optional: true
   belongs_to :created_by, class_name: "User", optional: true
@@ -31,24 +30,24 @@ class BudgetPlanBackup < ApplicationRecord
     end
   end
 
+  # Returns the names of captured categories that no longer exist.
   def restore!
     current = family.categories.index_by(&:id)
-    missing = categories.reject { |c| current.key?(c["id"]) }
-    if missing.any?
-      raise CannotRestore, I18n.t("budget_planners.restores.errors.missing_categories", names: missing.map { |c| c["name"] }.to_sentence)
-    end
+    present, missing = categories.partition { |c| current.key?(c["id"]) }
 
     transaction do
       # Flatten first so any parent can take back its children.
-      categories.each { |c| current[c["id"]].update!(parent_id: nil) if current[c["id"]].parent_id }
-      categories.each do |c|
-        current[c["id"]].reload.update!(c.slice("name", "parent_id", "color", "lucide_icon"))
+      present.each { |c| current[c["id"]].update!(parent_id: nil) if current[c["id"]].parent_id }
+      present.each do |c|
+        parent_id = current.key?(c["parent_id"]) ? c["parent_id"] : nil
+        current[c["id"]].reload.update!(c.slice("name", "color", "lucide_icon").merge("parent_id" => parent_id))
       end
 
       restore_budget! if budget
     end
 
     Budget::RolloverCalculator.new(family: family, user: budget.user).recompute! if budget
+    missing.map { |c| c["name"] }
   end
 
   private

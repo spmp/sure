@@ -3,89 +3,127 @@ en:
   budget_planners:
     show:
       title: Plan from history
-      subtitle: "%{start_date} to %{end_date}, scoped like the %{budget} budget. The current month is left out."
-      range_label: History range
-      months:
-        one: "%{count} month"
-        other: "%{count} months"
+      subtitle:
+        one: "%{start_date} to %{end_date} (1 month), scoped like the %{budget} budget. Months still in progress are left out."
+        other: "%{start_date} to %{end_date} (%{count} months), scoped like the %{budget} budget. Months still in progress are left out."
+      range_label: History
+      custom_range: Custom range
+      start_date: From
+      end_date: To
+      show_range: Show
       circles_title: Where the money went
       history_title: Month by month
-      panel_title: Categories
-      panel_columns: Average · median per month
-      fill_label: Fill amounts from
-      mode_label: Which categories to plan with
-      mode:
-        live: Current categories
-        draft: Draft grouping
-      toggle_width: Toggle panel width
+      plan_label: Plan
+      current_categories: Current categories
+      new_plan: New plan
+      new_plan_name: Plan name
+      new_plan_from: Start from
+      new_plan_from_current: Current categories
+      new_plan_copy: Copy of %{name}
+      create_plan: Create plan
+      rename_plan: Rename plan
+      delete_plan: Delete plan
+      delete_plan_confirm:
+        title: Delete %{name}?
+        body: The plan is deleted. Your categories and budgets aren't changed.
+      toggle_width: Narrow or wide panel
+      hide_panel: Hide panel
+      show_panel: Show panel
       new_group: New group
       new_group_placeholder: New group name
-      draft_hint: Use "Move to" on a row, or drag a row onto a group. Saved as you go; nothing changes until you apply.
-      start_again: Start again
-      start_again_confirm:
-        title: Start the draft again?
-        body: The draft goes back to your current categories. Nothing that's been applied changes.
-      stale:
-        title: Categories changed since this draft was made
-        body: Someone edited categories elsewhere. Start the draft again to plan from the current categories.
-      restore: Restore setup from %{date}
-      restore_confirm:
-        title: Restore the earlier setup?
-        body: Categories and the %{budget} budget go back to how they were before the last apply. Groups created since are kept.
+      sort_label: Sort by
+      sort:
+        spending: Spending
+        budget: Budget amount
+        name: Name
+      fill_label: Fill amounts you haven't typed from
       fill:
         average: Average
         median: Median
         current: Current
+      panel_columns: Average · median per month. Right-click a row, long-press it, or use ⋯ for more.
       budget_total: Budget total
       expected_income: Expected income
       remaining: Remaining
       apply: Apply to %{budget}
       confirm:
         title: Apply to %{budget}?
-        body: The amounts shown replace this budget's amounts for these categories, its total and its expected income. Subcategories keep their own amounts. Other months aren't changed.
+        body: The amounts shown replace this budget's amounts for these categories, its total and its expected income, and any category changes in the plan are made. A backup is saved first so you can restore it. Other months' amounts aren't changed.
         button: Apply
+      stale:
+        title: Categories changed since this plan was made
+        body: Someone edited categories elsewhere, so this plan can't be applied. Start a new plan from the current categories.
+      restore: Restore setup from %{date}
+      restore_confirm:
+        title: Restore the earlier setup?
+        body: Categories and the %{budget} budget go back to how they were before the last apply. Groups created since are kept; removed categories and moved transactions can't come back.
+      appearance_title: Colour and icon
+      colour: Colour
+      colour_follows_parent: Subcategories use their parent's colour.
+      icon: Icon
+      done: Done
       js:
         spending: Spending
         income: Income
         uncategorized: Uncategorized
         direct: "%{name} (direct)"
         inactive: No spending in this range
-        hidden: Hidden
         show: Show
         hide: Hide
         total: Total
         empty: No spending in this range yet.
         all_categories: All categories
-        move_to: "Move %{name} to"
-        top_level: Top level
-        moved: Moved
-        new_group: New
-        remove_group: Remove
-        saving: Saving draft…
-        saved: Draft saved
-        save_failed: "Couldn't save the draft: %{error}"
-        draft_summary: "Applying also moves %{moves} and creates %{groups}."
-        moves:
-          one: 1 category
-          other: "%{count} categories"
-        groups:
-          one: 1 group
-          other: "%{count} groups"
         below_minimum: "At least %{amount}: its subcategories' own amounts"
         amount_label: "%{name} budget per month"
+        more: "More for %{name}"
+        moved: Moved
+        renamed: Edited
+        new_group: New
+        removed: Removed
+        excluded: Excluded
+        excluded_note: "Excluded from totals and averages: %{names} (%{amount} a month on average)."
+        saving: Saving plan…
+        saved: Plan saved
+        save_failed: "Couldn't save the plan: %{error}"
+        creating_plan: Starting a plan for your changes…
+        default_plan_name: My plan
+        plan_summary: "Applying also changes categories: %{changes}."
+        changes:
+          moves: "%{count} moved"
+          groups: "%{count} new"
+          renames: "%{count} renamed or restyled"
+          removals: "%{count} removed"
+        menu:
+          move_to: Move to
+          top_level: Top level
+          rename: Rename…
+          rename_prompt: "New name for %{name}"
+          appearance: Colour & icon…
+          reset_appearance: Reset name, colour and icon
+          remove: Remove category
+          remove_group: Remove group
+          move_transactions: "Move its transactions to…"
+          undo_remove: Keep this category
+          exclude: Exclude from totals
+          include: Include in totals
+          hide: Hide from charts
+          show: Show in charts
+          reset_amount: Reset amount to
+          current: Current
+          average: Average
+          median: Median
+          remove_needs_empty: Move its subcategories out first
     update:
       applied: The %{budget} budget now uses these amounts.
-    restores:
-      errors:
-        missing_categories: "Can't restore: %{names} no longer exists."
     plan_application:
       errors:
         unknown_category: The plan includes a category that isn't a top-level category in this budget.
         below_subcategories: A category can't be budgeted below its subcategories' own amounts.
         invalid_amount: Amounts must be zero or more.
-        stale_draft: Categories were changed elsewhere since this draft was made. Start the draft again from the current categories.
-        invalid_draft: The draft grouping isn't valid any more. Start it again from the current categories.
+        stale_draft: Categories were changed elsewhere since this plan was made. Start a new plan from the current categories.
+        invalid_draft: The plan isn't valid any more. Start a new plan from the current categories.
   budget_planner_restores:
     create:
       none: There's no earlier setup to restore.
       restored: Categories and budget amounts are back as they were before the last apply.
+      restored_missing: "Restored, except %{names}, which no longer exists."

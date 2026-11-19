@@ -23,6 +23,27 @@ class Budget::PlanningHistoryTest < ActiveSupport::TestCase
     assert_equal Date.new(2026, 3, 31), history.periods.last.last
   end
 
+  test "a date range uses the complete budget periods inside it, up to the last finished one" do
+    history = Budget::PlanningHistory.new(@budget, start_date: Date.new(2025, 12, 15), end_date: Date.new(2026, 4, 15))
+
+    assert_equal [ Date.new(2026, 1, 1), Date.new(2026, 2, 1), Date.new(2026, 3, 1) ], history.periods.map(&:first)
+  end
+
+  test "a range shorter than a period falls back to the last finished period" do
+    history = Budget::PlanningHistory.new(@budget, start_date: Date.new(2026, 4, 8), end_date: Date.new(2026, 4, 15))
+
+    assert_equal [ [ Date.new(2026, 3, 1), Date.new(2026, 3, 31) ] ], history.periods
+  end
+
+  test "flags categories that have transactions at any date" do
+    txn(@groceries, 5, Date.new(2020, 1, 1))
+
+    categories = Budget::PlanningHistory.new(@budget, months: 1).as_json[:categories].index_by { |c| c[:id] }
+
+    assert categories[@groceries.id][:has_transactions]
+    refute categories[@food.id][:has_transactions]
+  end
+
   test "spending is netted of refunds per category and period" do
     txn(@groceries, 100, Date.new(2026, 2, 10))
     txn(@groceries, -30, Date.new(2026, 2, 12))

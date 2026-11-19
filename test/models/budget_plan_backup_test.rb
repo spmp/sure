@@ -40,12 +40,12 @@ class BudgetPlanBackupTest < ActiveSupport::TestCase
     assert_equal 1, BudgetPlanBackup.where(family: @family).count
   end
 
-  test "refuses to restore once a captured category is gone, naming it" do
+  test "restores what still exists and names what's gone" do
     backup = BudgetPlanBackup.capture!(@budget, user: nil)
     @coffee.destroy!
+    @groceries.update!(parent: nil)
 
-    error = assert_raises(BudgetPlanBackup::CannotRestore) { backup.reload.restore! }
-    assert_includes error.message, "Coffee"
+    assert_equal [ "Coffee" ], backup.reload.restore!
     assert_equal @food.id, @groceries.reload.parent_id
   end
 

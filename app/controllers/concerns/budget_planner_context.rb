@@ -1,8 +1,10 @@
 # Shared by the budget planner controllers: the budget in the URL, resolved
-# like the budget pages (household or personal, via BudgetOwnership), and the
-# planner's draft/backup state.
+# like the budget pages (household or personal, via BudgetOwnership), the
+# selected plan, and the state the page needs.
 module BudgetPlannerContext
   extend ActiveSupport::Concern
+
+  SESSION_KEY = :budget_planner_plan_id
 
   included do
     include BudgetOwnership
@@ -15,20 +17,39 @@ module BudgetPlannerContext
       raise ActiveRecord::RecordNotFound unless @budget&.viewable_by?(Current.user)
     end
 
-    def planner_path
-      budget_planner_path(@budget, **budget_owner_query)
+    def planner_path(**options)
+      budget_planner_path(@budget, **budget_owner_query, **options)
     end
 
-    # Rearranging is a family-wide category change; guests only look.
+    # Plans change family-wide categories; guests only look.
     def can_edit_categories?
       !Current.user.guest?
     end
 
-    def draft_state(draft = Current.family.budget_plan_draft)
+    def remember_plan(plan)
+      session[SESSION_KEY] = plan&.id
+    end
+
+    # `plan=current` (or no remembered plan) means the live categories.
+    def selected_plan
+      id = params[:plan].presence || session[SESSION_KEY]
+      return nil if id.blank? || id == "current"
+
+      Current.family.budget_plans.find_by(id: id)
+    end
+
+    def plan_state(plan)
+      return nil unless plan
+
+      plan.slice(:id, :name, :parents, :groups, :overrides, :excluded, :removals)
+          .merge(stale: plan.stale?, url: budget_planner_plan_path(@budget, plan, **budget_owner_query))
+    end
+
+    def draft_state(plan)
       {
-        parents: draft&.parents || {},
-        groups: draft&.groups || [],
-        stale: draft ? draft.stale? : false,
+        plan: plan_state(plan),
+        plans: Current.family.budget_plans.order(:name).map { |p| { id: p.id, name: p.name } },
+        create_url: budget_planner_plans_path(@budget, **budget_owner_query),
         can_edit: can_edit_categories?,
         locked: Current.family.categories_locked?
       }

@@ -10,9 +10,8 @@ class BudgetPlannerRestoresController < ApplicationController
     return redirect_to(planner_path, alert: t(".none"), status: :see_other) unless backup
     raise ActiveRecord::RecordNotFound if backup.budget && !backup.budget.editable_by?(Current.user)
 
-    backup.restore!
-    redirect_to planner_path, notice: t(".restored"), status: :see_other
-  rescue BudgetPlanBackup::CannotRestore => e
-    redirect_to planner_path, alert: e.message, status: :see_other
+    missing = backup.restore!
+    notice = missing.any? ? t(".restored_missing", names: missing.to_sentence) : t(".restored")
+    redirect_to planner_path, notice: notice, status: :see_other
   end
 end

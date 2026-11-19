@@ -391,16 +391,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_18_120000) do
     t.index ["family_id"], name: "index_budget_plan_backups_on_family_id", unique: true
   end
 
-  create_table "budget_plan_drafts", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+  create_table "budget_plans", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.uuid "family_id", null: false
+    t.string "name", null: false
     t.jsonb "parents", default: {}, null: false
     t.jsonb "groups", default: [], null: false
+    t.jsonb "overrides", default: {}, null: false
+    t.jsonb "excluded", default: [], null: false
+    t.jsonb "removals", default: {}, null: false
     t.string "categories_fingerprint", null: false
     t.uuid "updated_by_id"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
-    t.index ["family_id"], name: "index_budget_plan_drafts_on_family_id", unique: true
-    t.index ["updated_by_id"], name: "index_budget_plan_drafts_on_updated_by_id"
+    t.index ["family_id", "name"], name: "index_budget_plans_on_family_id_and_name", unique: true
+    t.index ["family_id"], name: "index_budget_plans_on_family_id"
+    t.index ["updated_by_id"], name: "index_budget_plans_on_updated_by_id"
   end
 
   create_table "budget_shares", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -3199,8 +3204,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_18_120000) do
   add_foreign_key "budget_plan_backups", "budgets", on_delete: :nullify
   add_foreign_key "budget_plan_backups", "families"
   add_foreign_key "budget_plan_backups", "users", column: "created_by_id", on_delete: :nullify
-  add_foreign_key "budget_plan_drafts", "families"
-  add_foreign_key "budget_plan_drafts", "users", column: "updated_by_id", on_delete: :nullify
+  add_foreign_key "budget_plans", "families"
+  add_foreign_key "budget_plans", "users", column: "updated_by_id", on_delete: :nullify
   add_foreign_key "budget_shares", "users", column: "owner_id"
   add_foreign_key "budget_shares", "users", column: "viewer_id"
   add_foreign_key "budgets", "families"

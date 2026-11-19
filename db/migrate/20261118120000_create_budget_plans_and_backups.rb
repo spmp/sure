@@ -1,13 +1,18 @@
-class CreateBudgetPlanDraftsAndBackups < ActiveRecord::Migration[8.1]
+class CreateBudgetPlansAndBackups < ActiveRecord::Migration[8.1]
   def change
-    create_table :budget_plan_drafts, id: :uuid do |t|
-      t.references :family, null: false, foreign_key: true, type: :uuid, index: { unique: true }
+    create_table :budget_plans, id: :uuid do |t|
+      t.references :family, null: false, foreign_key: true, type: :uuid
+      t.string :name, null: false
       t.jsonb :parents, null: false, default: {}
       t.jsonb :groups, null: false, default: []
+      t.jsonb :overrides, null: false, default: {}
+      t.jsonb :excluded, null: false, default: []
+      t.jsonb :removals, null: false, default: {}
       t.string :categories_fingerprint, null: false
       t.references :updated_by, foreign_key: { to_table: :users, on_delete: :nullify }, type: :uuid
       t.timestamps
     end
+    add_index :budget_plans, [ :family_id, :name ], unique: true
 
     create_table :budget_plan_backups, id: :uuid do |t|
       t.references :family, null: false, foreign_key: true, type: :uuid, index: { unique: true }

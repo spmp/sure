@@ -79,7 +79,7 @@ class Budget::PlanApplicationTest < ActiveSupport::TestCase
     draft = save_draft(groups: [ { "key" => "new-0000000a", "name" => "Lifestyle", "color" => "#805dee" } ],
                        parents: { coffee.id => "new-0000000a", @eating_out.id => "new-0000000a" })
 
-    apply(categories: { "new-0000000a" => 300, @food.id => 500 }, draft: draft)
+    apply(categories: { "new-0000000a" => 300, @food.id => 500 }, plan: draft)
 
     lifestyle = @family.categories.find_by!(name: "Lifestyle")
     assert_equal lifestyle.id, coffee.reload.parent_id
@@ -87,29 +87,41 @@ class Budget::PlanApplicationTest < ActiveSupport::TestCase
     assert_equal 0, allocation(@eating_out), "a moved subcategory shares its new parent's budget"
     assert_equal 0, allocation(coffee)
     assert_equal 500, allocation(@food)
-    assert_nil BudgetPlanDraft.find_by(id: draft.id)
+    assert_nil BudgetPlan.find_by(id: draft.id)
   end
 
   test "a stale draft applies nothing" do
     draft = save_draft(parents: { @home.id => @food.id })
     @home.update!(name: "House")
 
-    error = assert_raises(Budget::PlanApplication::Invalid) { apply(categories: { @food.id => 600 }, draft: draft) }
+    error = assert_raises(Budget::PlanApplication::Invalid) { apply(categories: { @food.id => 600 }, plan: draft) }
 
     assert_equal I18n.t("budget_planners.plan_application.errors.stale_draft"), error.message
     assert_nil @home.reload.parent_id
     assert_equal 0, allocation(@food)
   end
 
+  test "amounts for categories the plan removes are ignored" do
+    coffee = @family.categories.create!(name: "Coffee")
+    @budget.sync_budget_categories
+    plan = save_draft
+    plan.update!(removals: { coffee.id => nil })
+
+    apply(categories: { coffee.id => 50, @food.id => 500 }, plan: plan)
+
+    refute Category.exists?(coffee.id)
+    assert_equal 500, allocation(@food)
+  end
+
   private
-    def apply(categories:, uncategorized: 0, expected_income: nil, draft: nil)
+    def apply(categories:, uncategorized: 0, expected_income: nil, plan: nil)
       Budget::PlanApplication.new(@budget, categories: categories, uncategorized: uncategorized,
-                                           expected_income: expected_income, draft: draft).apply!
+                                           expected_income: expected_income, plan: plan).apply!
     end
 
     def save_draft(parents: {}, groups: [])
-      @family.create_budget_plan_draft!(parents: parents.transform_keys(&:to_s), groups: groups,
-                                        categories_fingerprint: BudgetPlanDraft.fingerprint(@family))
+      @family.budget_plans.create!(name: "Plan", parents: parents.transform_keys(&:to_s), groups: groups,
+                                   categories_fingerprint: BudgetPlan.fingerprint(@family))
     end
 
     def budget_category(category)

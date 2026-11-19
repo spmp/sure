@@ -10,9 +10,11 @@
 # plus the Uncategorized amount. Top-level categories missing from the plan
 # keep their allocation and still count towards the total.
 #
-# With a draft, its grouping is applied first, in the same transaction, and
-# amounts may be keyed by a new group's key. A category the draft moves
-# under a parent shares that parent's budget (its own amount becomes zero).
+# With a plan (BudgetPlan), its category changes are applied first, in the
+# same transaction, and amounts may be keyed by a new group's key. A
+# category the plan moves under a parent shares that parent's budget (its
+# own amount becomes zero). The plan is deleted once applied: its changes
+# are now the live categories.
 # Every apply first replaces the family's BudgetPlanBackup.
 class Budget::PlanApplication
   class Invalid < StandardError
@@ -47,9 +49,9 @@ class Budget::PlanApplication
     }
   end
 
-  def initialize(budget, categories:, uncategorized: 0, expected_income: nil, draft: nil, user: nil)
+  def initialize(budget, categories:, uncategorized: 0, expected_income: nil, plan: nil, user: nil)
     @budget = budget
-    @draft = draft
+    @plan = plan
     @user = user
     @amounts = categories.to_h { |id, amount| [ id.to_s, to_amount(amount) ] }
     @uncategorized = to_amount(uncategorized)
@@ -62,7 +64,7 @@ class Budget::PlanApplication
     Budget.transaction do
       budget.lock!
       BudgetPlanBackup.capture!(budget, user: user)
-      moved_ids = apply_draft!
+      moved_ids = apply_plan!
       budget.sync_budget_categories
       rows = budget.budget_categories.reload.includes(:category).lock.to_a
       rows.each do |bc|
@@ -84,7 +86,7 @@ class Budget::PlanApplication
       attributes = { budgeted_spending: allocated + uncategorized }
       attributes[:expected_income] = expected_income unless expected_income.nil?
       budget.update!(attributes)
-      draft&.destroy!
+      plan&.destroy!
     end
 
     # After commit: the calculator takes an advisory lock, and taking it while
@@ -95,18 +97,19 @@ class Budget::PlanApplication
   end
 
   private
-    attr_reader :budget, :amounts, :uncategorized, :expected_income, :draft, :user
+    attr_reader :budget, :amounts, :uncategorized, :expected_income, :plan, :user
 
-    # Returns the ids of the categories the draft moved.
-    def apply_draft!
-      return [] unless draft
-      raise Invalid.new(:invalid_draft) unless draft.valid?
+    # Returns the ids of the categories the plan moved.
+    def apply_plan!
+      return [] unless plan
+      raise Invalid.new(:invalid_draft) unless plan.valid?
 
-      moved_ids = draft.moved_category_ids
-      group_ids = draft.apply!
-      @amounts = amounts.transform_keys { |key| group_ids.fetch(key, key) }
+      moved_ids = plan.moved_category_ids
+      removed = plan.removed_category_ids
+      group_ids = plan.apply!
+      @amounts = amounts.except(*removed).transform_keys { |key| group_ids.fetch(key, key) }
       moved_ids
-    rescue BudgetPlanDraft::Stale
+    rescue BudgetPlan::Stale
       raise Invalid.new(:stale_draft)
     end
 

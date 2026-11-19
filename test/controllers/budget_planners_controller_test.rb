@@ -28,15 +28,11 @@ class BudgetPlannersControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-controller='budget-planner']"
   end
 
-  test "defaults to six months and accepts 3 or 12" do
-    get budget_planner_path(@month, months: 12)
-    assert_select "[data-budget-planner-history-value]" do |nodes|
-      assert_equal 12, JSON.parse(nodes.first["data-budget-planner-history-value"])["periods"].size
-    end
+  test "defaults to the last 365 days in whole months" do
+    get budget_planner_path(@month)
 
-    get budget_planner_path(@month, months: 999)
     assert_select "[data-budget-planner-history-value]" do |nodes|
-      assert_equal 6, JSON.parse(nodes.first["data-budget-planner-history-value"])["periods"].size
+      assert_includes 11..12, JSON.parse(nodes.first["data-budget-planner-history-value"])["periods"].size
     end
   end
 

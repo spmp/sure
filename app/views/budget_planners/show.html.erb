@@ -1,42 +1,73 @@
+<% plan = @draft_state[:plan] %>
+<% can_plan = @draft_state[:can_edit] && @plan_state[:editable] %>
 
 <div class="@container pb-6 lg:pb-12 space-y-4"
      data-controller="budget-planner"
      data-budget-planner-history-value="<%= @history.as_json.to_json %>"
      data-budget-planner-plan-value="<%= @plan_state.to_json %>"
      data-budget-planner-draft-value="<%= @draft_state.to_json %>"
-     data-budget-planner-draft-url-value="<%= budget_planner_draft_path(@budget, **budget_owner_query) %>"
      data-budget-planner-colors-value="<%= Category::COLORS.to_json %>"
      data-budget-planner-labels-value="<%= t(".js").to_json %>">
-  <div class="flex flex-wrap items-center gap-3">
+  <div class="flex flex-wrap items-end gap-3">
     <div>
       <h1 class="text-xl font-medium text-primary"><%= t(".title") %></h1>
       <p class="text-sm text-secondary">
         <%= t(".subtitle",
               start_date: l(@history.periods.first.first, format: :long),
               end_date: l(@history.periods.last.last, format: :long),
+              count: @history.periods.size,
               budget: @budget.name) %>
       </p>
     </div>
 
-    <div class="ml-auto">
-      <%= render DS::SegmentedControl.new(aria_label: t(".range_label"), class: "bg-surface-inset") do |control| %>
-        <% BudgetPlannersController::MONTH_OPTIONS.each do |months| %>
-          <% control.with_segment(t(".months", count: months), active: months == @months,
-               href: budget_planner_path(@budget, months: months, **budget_owner_query)) %>
-        <% end %>
+    <%= form_with url: budget_planner_path(@budget), method: :get, local: true,
+          class: "ml-auto flex flex-wrap items-end gap-2",
+          data: { turbo_action: "replace", budget_planner_target: "rangeForm" } do %>
+      <% budget_owner_query.each do |name, value| %>
+        <%= hidden_field_tag name, value, id: nil, autocomplete: "off" %>
       <% end %>
-    </div>
+      <div class="form-field w-44">
+        <div class="form-field__body">
+          <label for="planner_period" class="form-field__label"><%= t(".range_label") %></label>
+          <%= select_tag :period,
+                options_for_select(BudgetPlannersController::PERIOD_KEYS.map { |key| [ Period::PERIODS[key][:label], key ] } + [ [ t(".custom_range"), "custom" ] ], @period_key),
+                id: "planner_period", class: "form-field__input", autocomplete: "off",
+                data: { action: "budget-planner#changePeriod" } %>
+        </div>
+      </div>
+      <div class="<%= "hidden" unless @period_key == "custom" %> flex items-end gap-2" data-budget-planner-target="customRange">
+        <div class="form-field w-36">
+          <div class="form-field__body">
+            <label for="planner_start_date" class="form-field__label"><%= t(".start_date") %></label>
+            <%= date_field_tag :start_date, @history.periods.first.first, id: "planner_start_date", class: "form-field__input", autocomplete: "off" %>
+          </div>
+        </div>
+        <div class="form-field w-36">
+          <div class="form-field__body">
+            <label for="planner_end_date" class="form-field__label"><%= t(".end_date") %></label>
+            <%= date_field_tag :end_date, @history.periods.last.last, id: "planner_end_date", class: "form-field__input", autocomplete: "off" %>
+          </div>
+        </div>
+        <%= render DS::Button.new(text: t(".show_range"), variant: "outline", type: "submit") %>
+      </div>
+    <% end %>
   </div>
 
-  <% if @draft_state[:stale] %>
+  <% if plan&.dig(:stale) %>
     <%= render DS::Alert.new(variant: :warning, title: t(".stale.title"), message: t(".stale.body")) %>
   <% end %>
 
   <div class="grid grid-cols-1 @4xl:grid-cols-5 gap-4">
     <div class="@4xl:col-span-3 space-y-4" data-budget-planner-target="chartsColumn">
+      <div class="hidden justify-end" data-budget-planner-target="expandPanel">
+        <%= render DS::Button.new(text: t(".show_panel"), variant: "outline", icon: "panel-right-open", type: "button",
+              data: { action: "budget-planner#showPanel" }) %>
+      </div>
+
       <%= render DS::Card.new do %>
         <h2 class="text-sm font-medium text-secondary mb-2"><%= t(".circles_title") %></h2>
         <div class="w-full aspect-square max-w-xl mx-auto" data-budget-planner-target="circles"></div>
+        <p class="hidden mt-2 text-xs text-subdued" data-budget-planner-target="excludedNote"></p>
       <% end %>
 
       <%= render DS::Card.new do %>
@@ -49,24 +80,70 @@
     </div>
 
     <%= render DS::Card.new(class: "@4xl:col-span-2", data: { budget_planner_target: "panelCard" }) do %>
-      <div class="flex flex-wrap items-center gap-2 mb-3">
-        <% if @draft_state[:can_edit] && @plan_state[:editable] %>
-          <%= render DS::SegmentedControl.new(aria_label: t(".mode_label"), class: "bg-surface-inset") do |control| %>
-            <% control.with_segment(t(".mode.live"), data: { action: "budget-planner#setMode", mode: "live", budget_planner_target: "modeButton" }) %>
-            <% control.with_segment(t(".mode.draft"), data: { action: "budget-planner#setMode", mode: "draft", budget_planner_target: "modeButton" }) %>
+      <div class="flex flex-wrap items-end gap-2 mb-2">
+        <div class="form-field flex-1 min-w-48">
+          <div class="form-field__body">
+            <label for="planner_plan" class="form-field__label"><%= t(".plan_label") %></label>
+            <select id="planner_plan" class="form-field__input" autocomplete="off"
+                    data-budget-planner-target="planSelect" data-action="budget-planner#choosePlan">
+              <option value="current" <%= "selected" unless plan %>><%= t(".current_categories") %></option>
+              <% @draft_state[:plans].each do |option| %>
+                <option value="<%= option[:id] %>" <%= "selected" if plan && option[:id] == plan[:id] %>><%= option[:name] %></option>
+              <% end %>
+            </select>
+          </div>
+        </div>
+        <% if can_plan %>
+          <%= render DS::Button.new(variant: "icon", icon: "plus", type: "button", title: t(".new_plan"),
+                aria: { label: t(".new_plan"), expanded: "false" },
+                data: { action: "budget-planner#toggleNewPlan", budget_planner_target: "newPlanButton" }) %>
+          <% if plan %>
+            <%= render DS::Button.new(variant: "icon", icon: "pencil", type: "button", title: t(".rename_plan"),
+                  aria: { label: t(".rename_plan") }, data: { action: "budget-planner#renamePlan" }) %>
+            <%= render DS::Button.new(variant: "icon", icon: "trash-2", title: t(".delete_plan"),
+                  aria: { label: t(".delete_plan") },
+                  href: budget_planner_plan_path(@budget, plan[:id], **budget_owner_query), method: :delete,
+                  confirm: CustomConfirm.new(title: t(".delete_plan_confirm.title", name: plan[:name]), body: t(".delete_plan_confirm.body"), btn_text: t(".delete_plan"), destructive: true)) %>
           <% end %>
         <% end %>
-        <span class="text-xs text-subdued" data-budget-planner-target="draftStatus" role="status"></span>
-        <div class="ml-auto hidden @4xl:block">
-          <%= render DS::Button.new(variant: "icon", icon: "panel-right-open", type: "button",
-                aria: { label: t(".toggle_width"), pressed: "false" },
-                title: t(".toggle_width"),
+        <div class="ml-auto hidden @4xl:flex items-center gap-1">
+          <%= render DS::Button.new(variant: "icon", icon: "columns-2", type: "button",
+                aria: { label: t(".toggle_width"), pressed: "false" }, title: t(".toggle_width"),
                 data: { action: "budget-planner#toggleWidth", budget_planner_target: "widthToggle" }) %>
+          <%= render DS::Button.new(variant: "icon", icon: "panel-right-close", type: "button",
+                aria: { label: t(".hide_panel") }, title: t(".hide_panel"),
+                data: { action: "budget-planner#hidePanel" }) %>
         </div>
       </div>
+      <p class="text-xs text-subdued min-h-4 mb-2" data-budget-planner-target="draftStatus" role="status"></p>
 
-      <div class="hidden mb-3 space-y-2" data-budget-planner-target="draftTools">
-        <div class="flex items-center gap-2">
+      <% if can_plan %>
+        <div class="hidden mb-3 p-3 rounded-lg bg-surface-inset space-y-2" data-budget-planner-target="newPlanForm">
+          <div class="form-field">
+            <input type="text" class="form-field__input" maxlength="60" autocomplete="off"
+                   placeholder="<%= t(".new_plan_name") %>" aria-label="<%= t(".new_plan_name") %>"
+                   data-budget-planner-target="newPlanName"
+                   data-action="keydown.enter->budget-planner#createPlan:prevent">
+          </div>
+          <fieldset class="flex flex-wrap gap-3 text-sm text-secondary">
+            <legend class="sr-only"><%= t(".new_plan_from") %></legend>
+            <label class="flex items-center gap-1">
+              <input type="radio" name="planner_new_plan_from" value="current" checked data-budget-planner-target="newPlanFrom">
+              <%= t(".new_plan_from_current") %>
+            </label>
+            <% if plan %>
+              <label class="flex items-center gap-1">
+                <input type="radio" name="planner_new_plan_from" value="<%= plan[:id] %>" data-budget-planner-target="newPlanFrom">
+                <%= t(".new_plan_copy", name: plan[:name]) %>
+              </label>
+            <% end %>
+          </fieldset>
+          <div class="flex justify-end">
+            <%= render DS::Button.new(text: t(".create_plan"), type: "button", data: { action: "budget-planner#createPlan" }) %>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-2 mb-3">
           <div class="form-field flex-1">
             <input type="text" class="form-field__input" maxlength="60" autocomplete="off"
                    placeholder="<%= t(".new_group_placeholder") %>"
@@ -77,30 +154,35 @@
           <%= render DS::Button.new(text: t(".new_group"), variant: "outline", icon: "plus", type: "button",
                 data: { action: "budget-planner#addGroup" }) %>
         </div>
-        <div class="flex items-center justify-between gap-2 text-xs text-secondary">
-          <span><%= t(".draft_hint") %></span>
-          <%= render DS::Button.new(text: t(".start_again"), variant: "ghost", size: :sm,
-                href: budget_planner_draft_path(@budget, **budget_owner_query), method: :delete,
-                confirm: CustomConfirm.new(title: t(".start_again_confirm.title"), body: t(".start_again_confirm.body"), btn_text: t(".start_again"))) %>
-        </div>
-      </div>
+      <% end %>
 
       <%= form_with url: budget_planner_path(@budget, **budget_owner_query), method: :patch, scope: :plan,
             data: { budget_planner_target: "form" } do %>
-        <input type="hidden" name="plan[apply_grouping]" value="0" autocomplete="off" data-budget-planner-target="applyGrouping">
-        <div class="flex items-start justify-between gap-2 mb-3">
-          <div>
-            <h2 class="text-sm font-medium text-secondary"><%= t(".panel_title") %></h2>
-            <p class="text-xs text-subdued"><%= t(".panel_columns") %></p>
+        <input type="hidden" name="plan[plan_id]" value="<%= plan&.dig(:id) %>" autocomplete="off" data-budget-planner-target="planId">
+        <div class="flex flex-wrap items-end justify-between gap-2 mb-3">
+          <div class="form-field w-40">
+            <div class="form-field__body">
+              <label for="planner_sort" class="form-field__label"><%= t(".sort_label") %></label>
+              <select id="planner_sort" class="form-field__input" autocomplete="off"
+                      data-budget-planner-target="sortSelect" data-action="budget-planner#changeSort">
+                <% %w[spending budget name].each do |sort| %>
+                  <option value="<%= sort %>"><%= t(".sort.#{sort}") %></option>
+                <% end %>
+              </select>
+            </div>
           </div>
           <% if @plan_state[:editable] %>
-            <%= render DS::SegmentedControl.new(aria_label: t(".fill_label"), class: "bg-surface-inset shrink-0") do |control| %>
-              <% %w[average median current].each do |source| %>
-                <% control.with_segment(t(".fill.#{source}"), data: { action: "budget-planner#fill", source: source, budget_planner_target: "fillButton" }) %>
+            <div class="text-right">
+              <p class="text-xs text-subdued mb-1"><%= t(".fill_label") %></p>
+              <%= render DS::SegmentedControl.new(aria_label: t(".fill_label"), class: "bg-surface-inset") do |control| %>
+                <% %w[average median current].each do |source| %>
+                  <% control.with_segment(t(".fill.#{source}"), data: { action: "budget-planner#fill", source: source }) %>
+                <% end %>
               <% end %>
-            <% end %>
+            </div>
           <% end %>
         </div>
+        <p class="text-xs text-subdued mb-2"><%= t(".panel_columns") %></p>
 
         <div data-budget-planner-target="panel" class="text-sm"></div>
 
@@ -136,7 +218,7 @@
         <% end %>
       <% end %>
 
-      <% if @backup_state && @draft_state[:can_edit] && @plan_state[:editable] %>
+      <% if @backup_state && can_plan %>
         <% restore_text = t(".restore", date: l(Time.zone.parse(@backup_state[:created_at]), format: :short)) %>
         <div class="mt-2 flex justify-end">
           <%= render DS::Button.new(
@@ -152,6 +234,37 @@
               ) %>
         </div>
       <% end %>
+    <% end %>
+  </div>
+
+  <%# Colour and icon picker, shown by the row menu's "Colour & icon". %>
+  <div class="hidden fixed z-50 w-80 max-w-[calc(100vw-2rem)] p-4 bg-container rounded-2xl shadow-border-xs space-y-3"
+       role="dialog" aria-label="<%= t(".appearance_title") %>"
+       data-budget-planner-target="appearance">
+    <p class="text-sm font-medium text-primary" data-budget-planner-target="appearanceTitle"></p>
+    <div data-budget-planner-target="appearanceColors">
+      <p class="text-xs text-secondary mb-1"><%= t(".colour") %></p>
+      <div class="flex flex-wrap gap-1.5">
+        <% Category::COLORS.each do |color| %>
+          <button type="button" class="w-6 h-6 rounded-full border border-secondary focus-ring" style="background-color: <%= color %>"
+                  aria-label="<%= color %>" data-color="<%= color %>" data-action="budget-planner#pickColor"></button>
+        <% end %>
+      </div>
+    </div>
+    <p class="hidden text-xs text-subdued" data-budget-planner-target="appearanceColorNote"><%= t(".colour_follows_parent") %></p>
+    <%= form_with url: "#", scope: :appearance, data: { action: "change->budget-planner#pickIcon submit->budget-planner#closeAppearance:prevent" } do |f| %>
+      <p class="text-xs text-secondary mb-1"><%= t(".icon") %></p>
+      <%= render DS::IconPicker.new(form: f, method: :icon, icons: Category.icon_codes) %>
+    <% end %>
+    <div class="flex justify-end">
+      <%= render DS::Button.new(text: t(".done"), variant: "outline", type: "button", data: { action: "budget-planner#closeAppearance" }) %>
+    </div>
+  </div>
+
+  <%# Icons the panel rows draw, cloned by the controller. %>
+  <div class="hidden" data-budget-planner-target="iconSprites">
+    <% (Category.icon_codes | Current.family.categories.pluck(:lucide_icon) | %w[circle-dashed folder]).each do |name| %>
+      <span data-icon="<%= name %>"><%= icon(name, size: "sm", color: "current") %></span>
     <% end %>
   </div>
 </div>

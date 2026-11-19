@@ -8,22 +8,25 @@
 class Budget::PlanningHistory
   UNCATEGORIZED_KEY = "uncategorized".freeze
 
-  attr_reader :budget, :months
+  attr_reader :budget
 
-  def initialize(budget, months: 6)
+  # Either the `months` complete budget periods before the budget, or the
+  # complete periods between `start_date` and `end_date` that have finished
+  # (at least the last finished one).
+  def initialize(budget, months: 6, start_date: nil, end_date: nil)
     @budget = budget
     @months = months
+    @start_date = start_date
+    @end_date = end_date
   end
 
   # [[start_date, end_date], ...], oldest first.
   def periods
-    @periods ||= begin
-      date = budget.start_date
-      Array.new(months) do
-        date = Budget.period_for(date - 1.day, family: family).first
-        [ date, Budget.period_for(date, family: family).last ]
-      end.reverse
-    end
+    @periods ||= @start_date ? periods_in_range : periods_before_budget
+  end
+
+  def months
+    periods.size
   end
 
   def as_json(*)
@@ -44,9 +47,32 @@ class Budget::PlanningHistory
       budget.family
     end
 
+    def periods_before_budget
+      date = budget.start_date
+      Array.new(@months) do
+        date = Budget.period_for(date - 1.day, family: family).first
+        [ date, Budget.period_for(date, family: family).last ]
+      end.reverse
+    end
+
+    def periods_in_range
+      last_finished = Budget.period_for(Date.current, family: family).first - 1.day
+      finish = [ @end_date, last_finished ].min
+      list = []
+      period = Budget.period_for(finish, family: family)
+      period = Budget.period_for(period.first - 1.day, family: family) if period.last > finish
+      while period.first >= @start_date
+        list.unshift(period)
+        period = Budget.period_for(period.first - 1.day, family: family)
+      end
+      list.presence || [ Budget.period_for(last_finished, family: family) ]
+    end
+
     def categories
+      used = family.transactions.where.not(category_id: nil).distinct.pluck(:category_id).to_set
       family.categories.order(:name).map do |category|
-        { id: category.id, name: category.name, parent_id: category.parent_id, color: category.color, icon: category.lucide_icon }
+        { id: category.id, name: category.name, parent_id: category.parent_id, color: category.color,
+          icon: category.lucide_icon, has_transactions: used.include?(category.id) }
       end
     end
 
