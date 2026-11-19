@@ -6,7 +6,9 @@ en:
       subtitle:
         one: "%{start_date} to %{end_date} (1 month), scoped like the %{budget} budget. Months still in progress are left out."
         other: "%{start_date} to %{end_date} (%{count} months), scoped like the %{budget} budget. Months still in progress are left out."
-      range_label: History
+      subtitle_in_progress:
+        one: "%{start_date} to %{end_date} (1 month, still in progress), scoped like the %{budget} budget."
+        other: "%{start_date} to %{end_date} (%{count} months, the last still in progress), scoped like the %{budget} budget."
       custom_range: Custom range
       start_date: From
       end_date: To
@@ -26,7 +28,9 @@ en:
       delete_plan_confirm:
         title: Delete %{name}?
         body: The plan is deleted. Your categories and budgets aren't changed.
-      toggle_width: Narrow or wide panel
+      cancel: Cancel
+      remove: Remove
+      remove_new_name: Name for the new category
       hide_panel: Hide panel
       show_panel: Show panel
       new_group: New group
@@ -41,7 +45,7 @@ en:
         average: Average
         median: Median
         current: Current
-      panel_columns: Average · median per month. Right-click a row, long-press it, or use ⋯ for more.
+      panel_columns: Average · median per month. Right-click a row or circle, long-press it, or use ⋯ for more. Drag a circle onto another to move it.
       budget_total: Budget total
       expected_income: Expected income
       remaining: Remaining
@@ -87,6 +91,13 @@ en:
         save_failed: "Couldn't save the plan: %{error}"
         creating_plan: Starting a plan for your changes…
         default_plan_name: My plan
+        remove:
+          title: "Remove %{name}?"
+          children: "Its subcategories (%{names}) become top-level categories."
+          transactions_label: "Move its %{count} transactions to"
+          new_category: New category…
+          new_name_required: Enter a name for the new category.
+          name_taken: There's already a category called %{name}.
         plan_summary: "Applying also changes categories: %{changes}."
         changes:
           moves: "%{count} moved"
@@ -94,15 +105,12 @@ en:
           renames: "%{count} renamed or restyled"
           removals: "%{count} removed"
         menu:
-          move_to: Move to
-          top_level: Top level
           rename: Rename…
           rename_prompt: "New name for %{name}"
           appearance: Colour & icon…
           reset_appearance: Reset name, colour and icon
-          remove: Remove category
-          remove_group: Remove group
-          move_transactions: "Move its transactions to…"
+          remove: Remove category…
+          remove_group: Remove group…
           undo_remove: Keep this category
           exclude: Exclude from totals
           include: Include in totals
@@ -112,7 +120,6 @@ en:
           current: Current
           average: Average
           median: Median
-          remove_needs_empty: Move its subcategories out first
     update:
       applied: The %{budget} budget now uses these amounts.
     plan_application:

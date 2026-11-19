@@ -1,8 +1,6 @@
 class BudgetPlannersController < ApplicationController
   include BudgetPlannerContext
 
-  # Sure's standard ranges that span at least a month, plus "custom".
-  PERIOD_KEYS = %w[last_90_days current_year last_365_days last_5_years last_10_years all_time].freeze
   DEFAULT_PERIOD = "last_365_days".freeze
 
   before_action :require_preview_features!
@@ -10,8 +8,8 @@ class BudgetPlannersController < ApplicationController
   before_action :ensure_budget_editable!, only: :update
 
   def show
-    @period_key, start_date, end_date = requested_range
-    @history = Budget::PlanningHistory.new(@budget, start_date: start_date, end_date: end_date)
+    @period = requested_period
+    @history = Budget::PlanningHistory.new(@budget, start_date: @period.start_date, end_date: @period.end_date)
     @plan_state = Budget::PlanApplication.current_state(@budget, user: Current.user)
     plan = selected_plan
     remember_plan(plan) if params.key?(:plan)
@@ -54,17 +52,15 @@ class BudgetPlannersController < ApplicationController
       Current.family.budget_plans.find_by(id: plan_params[:plan_id])
     end
 
-    # [period key, start date, end date]. Unknown keys and bad custom dates
-    # fall back to the default range.
-    def requested_range
-      if params[:period] == "custom"
+    # Sure's standard periods (the dashboard's picker), or a custom range
+    # given as start_date/end_date. Anything else gets the default.
+    def requested_period
+      if params[:period].blank? && params[:start_date].present?
         custom = custom_range
-        return [ "custom", *custom ] if custom
+        return Period.custom(start_date: custom.first, end_date: custom.last) if custom
       end
 
-      key = PERIOD_KEYS.include?(params[:period]) ? params[:period] : DEFAULT_PERIOD
-      range = Period.from_key(key)
-      [ key, range.start_date, range.end_date ]
+      Period.from_key(Period.valid_key?(params[:period].to_s) ? params[:period] : DEFAULT_PERIOD)
     end
 
     def custom_range

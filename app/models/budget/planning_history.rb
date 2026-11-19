@@ -11,8 +11,9 @@ class Budget::PlanningHistory
   attr_reader :budget
 
   # Either the `months` complete budget periods before the budget, or the
-  # complete periods between `start_date` and `end_date` that have finished
-  # (at least the last finished one).
+  # periods between `start_date` and `end_date` that have finished. A range
+  # with no finished period in it (a week, this month) uses the periods it
+  # touches instead, including the one in progress.
   def initialize(budget, months: 6, start_date: nil, end_date: nil)
     @budget = budget
     @months = months
@@ -27,6 +28,10 @@ class Budget::PlanningHistory
 
   def months
     periods.size
+  end
+
+  def includes_current_period?
+    periods.last.last >= Date.current
   end
 
   def as_json(*)
@@ -65,14 +70,27 @@ class Budget::PlanningHistory
         list.unshift(period)
         period = Budget.period_for(period.first - 1.day, family: family)
       end
-      list.presence || [ Budget.period_for(last_finished, family: family) ]
+      list.presence || touched_periods
+    end
+
+    def touched_periods
+      list = []
+      period = Budget.period_for([ @end_date, Date.current ].min, family: family)
+      loop do
+        list.unshift(period)
+        break if period.first <= @start_date
+
+        period = Budget.period_for(period.first - 1.day, family: family)
+      end
+      list
     end
 
     def categories
-      used = family.transactions.where.not(category_id: nil).distinct.pluck(:category_id).to_set
+      counts = family.transactions.where.not(category_id: nil).group(:category_id).count
       family.categories.order(:name).map do |category|
+        count = counts.fetch(category.id, 0)
         { id: category.id, name: category.name, parent_id: category.parent_id, color: category.color,
-          icon: category.lucide_icon, has_transactions: used.include?(category.id) }
+          icon: category.lucide_icon, has_transactions: count.positive?, transaction_count: count }
       end
     end
 

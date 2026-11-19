@@ -29,10 +29,15 @@ class Budget::PlanningHistoryTest < ActiveSupport::TestCase
     assert_equal [ Date.new(2026, 1, 1), Date.new(2026, 2, 1), Date.new(2026, 3, 1) ], history.periods.map(&:first)
   end
 
-  test "a range shorter than a period falls back to the last finished period" do
+  test "a range with no finished period uses the periods it touches, including the one in progress" do
     history = Budget::PlanningHistory.new(@budget, start_date: Date.new(2026, 4, 8), end_date: Date.new(2026, 4, 15))
 
-    assert_equal [ [ Date.new(2026, 3, 1), Date.new(2026, 3, 31) ] ], history.periods
+    assert_equal [ [ Date.new(2026, 4, 1), Date.new(2026, 4, 30) ] ], history.periods
+    assert history.includes_current_period?
+  end
+
+  test "finished ranges don't include the period in progress" do
+    refute Budget::PlanningHistory.new(@budget, start_date: Date.new(2026, 1, 1), end_date: Date.new(2026, 4, 15)).includes_current_period?
   end
 
   test "flags categories that have transactions at any date" do
@@ -41,6 +46,7 @@ class Budget::PlanningHistoryTest < ActiveSupport::TestCase
     categories = Budget::PlanningHistory.new(@budget, months: 1).as_json[:categories].index_by { |c| c[:id] }
 
     assert categories[@groceries.id][:has_transactions]
+    assert_equal 1, categories[@groceries.id][:transaction_count]
     refute categories[@food.id][:has_transactions]
   end
 

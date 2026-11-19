@@ -16,6 +16,7 @@ class BudgetPlannerTest < ApplicationSystemTestCase
     eating_out = @family.categories.create!(name: "Eating out", parent: food)
     salary = @family.categories.create!(name: "Pay", color: "#10a861")
     @family.categories.create!(name: "Old stuff", color: "#805dee")
+    @loan_interest = @family.categories.create!(name: "Loan interest", color: "#db5a54")
 
     6.times do |i|
       month = Date.current.beginning_of_month - (i + 1).months
@@ -25,6 +26,7 @@ class BudgetPlannerTest < ApplicationSystemTestCase
       create_transaction(account: account, category: food, amount: 30, date: month + 12.days, currency: @family.currency)
       create_transaction(account: account, category: salary, amount: -4200, date: month + 14.days, currency: @family.currency)
     end
+    @interest_entry = create_transaction(account: account, category: @loan_interest, amount: 35, date: Date.current.beginning_of_month - 1.month, currency: @family.currency)
 
     sign_in @user
     @month = Budget.date_to_param(Date.current)
@@ -47,6 +49,11 @@ class BudgetPlannerTest < ApplicationSystemTestCase
     menu_for("Home costs")
     click_on "Hide from charts"
     assert_selector "[data-budget-planner-target='circles'] circle", count: circles - 1
+
+    food = @family.categories.find_by!(name: "Food shopping")
+    assert_no_selector "svg text", text: "Supermarket"
+    find("g[data-node-id='#{food.id}']").hover
+    assert_selector "svg text", text: "Supermarket"
 
     within(panel) { click_on "Food shopping" }
     assert_selector "[data-budget-planner-target='historyTitle']", text: "Food shopping"
@@ -90,8 +97,8 @@ class BudgetPlannerTest < ApplicationSystemTestCase
     assert_selector "[data-budget-planner-target='draftStatus']", text: "Plan saved"
     assert_selector "#planner_plan option:checked", text: "My plan"
 
-    menu_for("Eating out")
-    within("[role=menu]") { find("[role=menuitemradio]", text: "Going out").click }
+    eating_out = @family.categories.find_by!(name: "Eating out")
+    find("g[data-node-id='#{eating_out.id}']").drag_to(find("g[data-node-id^='new-']"))
     within(panel) { assert_text "Moved" }
 
     menu_for("Supermarket")
@@ -111,8 +118,18 @@ class BudgetPlannerTest < ApplicationSystemTestCase
     assert_selector "[data-budget-planner-target='excludedNote']", text: "Pay"
 
     menu_for("Old stuff")
-    click_on "Remove category"
+    click_on "Remove category…"
     within(panel) { assert_text "Removed" }
+
+    menu_for("Loan interest")
+    click_on "Remove category…"
+    within("[data-budget-planner-target='removeDialog']") do
+      assert_text "Move its 1 transactions to"
+      select "New category…", from: "Move its 1 transactions to"
+      fill_in "Name for the new category", with: "Interest"
+      click_on "Remove"
+    end
+    within(panel) { assert_text "Interest" }
 
     assert_selector "[data-budget-planner-target='draftStatus']", text: "Plan saved"
     assert_text "Applying also changes categories"
@@ -128,18 +145,25 @@ class BudgetPlannerTest < ApplicationSystemTestCase
     home = @family.categories.find_by!(name: "Home costs")
     assert_equal [ "#805dee", "house" ], [ home.color, home.lucide_icon ]
     refute @family.categories.exists?(name: "Old stuff")
+    refute @family.categories.exists?(name: "Loan interest")
+    assert_equal @family.categories.find_by!(name: "Interest").id, @interest_entry.reload.entryable.category_id
     assert @family.categories.find_by!(name: "Pay"), "excluding never changes categories"
 
     visit budget_planner_path(@month)
     click_on "Restore setup from"
     within("#confirm-dialog") { click_on "Restore setup from" }
-    assert_text "except Old stuff"
+    assert_text "except"
+    assert_text "Old stuff"
     assert_equal @family.categories.find_by!(name: "Food shopping").id, @family.categories.find_by!(name: "Eating out").parent_id
     assert @family.categories.exists?(name: "Supermarket")
   end
 
   test "plans: create with +, copy, switch back to current categories" do
     visit budget_planner_path(@month, plan: "current")
+
+    find("button[aria-label='New plan']").click
+    click_on "Cancel"
+    assert_no_field "Plan name"
 
     find("button[aria-label='New plan']").click
     fill_in "Plan name", with: "Lean"
@@ -164,18 +188,23 @@ class BudgetPlannerTest < ApplicationSystemTestCase
     names = all("[data-budget-planner-target='panel'] li > div > button").map(&:text)
     assert_equal names.sort_by(&:downcase), names
 
-    select "Last 90 Days", from: "History"
+    find("button[aria-label='Time period: 365D']").click
+    click_on "90D"
     assert_text "(2 months)"
-    select "Custom range", from: "History"
+
+    find("button[aria-label='Time period: 90D']").click
+    click_on "MTD"
+    assert_text "still in progress"
+
+    click_on "Custom range"
     set_date "planner_start_date", Date.current.beginning_of_month - 4.months
     set_date "planner_end_date", Date.current.beginning_of_month - 1.day
     click_on "Show"
     assert_text "(4 months)"
 
     page.driver.browser.manage.window.resize_to(2200, 1400)
-    find("button[aria-label='Narrow or wide panel']").click
-    assert_selector "button[aria-label='Narrow or wide panel'][aria-pressed='true']"
-    save_screenshot(Rails.root.join("tmp/screenshots/budget_planner_wide.png"))
+    visit current_url
+    assert_no_selector "button[aria-label='Narrow or wide panel']"
     find("button[aria-label='Hide panel']").click
     assert_no_selector "[data-budget-planner-target='panelCard']", visible: true
     save_screenshot(Rails.root.join("tmp/screenshots/budget_planner_collapsed.png"))
@@ -185,7 +214,7 @@ class BudgetPlannerTest < ApplicationSystemTestCase
 
   private
     def six_months
-      budget_planner_path(@month, plan: "current", period: "custom",
+      budget_planner_path(@month, plan: "current",
                           start_date: (Date.current.beginning_of_month - 6.months).iso8601,
                           end_date: (Date.current.beginning_of_month - 1.day).iso8601)
     end

@@ -127,7 +127,10 @@ class BudgetPlannerPlansControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_operator history_periods.size, :<=, 3
 
-    get budget_planner_path(@month, period: "custom", start_date: "2024-01-01", end_date: "2024-06-30")
+    get budget_planner_path(@month, period: "current_month")
+    assert_equal 1, history_periods.size
+
+    get budget_planner_path(@month, start_date: "2024-01-01", end_date: "2024-06-30")
     assert_equal 6, history_periods.size
 
     get budget_planner_path(@month, period: "nonsense")

@@ -4,7 +4,6 @@ import * as d3 from "d3";
 const UNCATEGORIZED = "uncategorized";
 const DIRECT = ":direct";
 const STORE = {
-  wide: "budgetPlanner.wide",
   hidden: "budgetPlanner.panelHidden",
   sort: "budgetPlanner.sort",
 };
@@ -38,7 +37,6 @@ export default class extends Controller {
     "planId",
     "draftSummary",
     "draftStatus",
-    "widthToggle",
     "newGroupName",
     "planSelect",
     "newPlanForm",
@@ -46,8 +44,17 @@ export default class extends Controller {
     "newPlanFrom",
     "newPlanButton",
     "sortSelect",
-    "rangeForm",
     "customRange",
+    "customRangeButton",
+    "removeDialog",
+    "removeTitle",
+    "removeChildrenNote",
+    "removeTargetFields",
+    "removeTargetLabel",
+    "removeTarget",
+    "removeNewNameField",
+    "removeNewName",
+    "removeError",
     "appearance",
     "appearanceTitle",
     "appearanceColors",
@@ -71,7 +78,7 @@ export default class extends Controller {
   #liveExcluded = new Set();
   #hidden = new Set();
   #selected = null;
-  #wide = false;
+  #removing = null;
   #panelHidden = false;
   #sort = "spending";
   #saveTimer = null;
@@ -85,7 +92,6 @@ export default class extends Controller {
     this.#plan = this.draftValue.plan
       ? structuredClone(this.draftValue.plan)
       : null;
-    this.#wide = this.#read(STORE.wide) === "1";
     this.#panelHidden = this.#read(STORE.hidden) === "1";
     this.#sort = this.#read(STORE.sort) || "spending";
     if (this.hasSortSelectTarget) this.sortSelectTarget.value = this.#sort;
@@ -110,10 +116,10 @@ export default class extends Controller {
 
   // --- actions: page ---
 
-  changePeriod(event) {
-    const custom = event.currentTarget.value === "custom";
-    this.customRangeTarget.classList.toggle("hidden", !custom);
-    if (!custom) this.rangeFormTarget.requestSubmit();
+  toggleCustomRange() {
+    const hidden = this.customRangeTarget.classList.toggle("hidden");
+    this.customRangeTarget.classList.toggle("flex", !hidden);
+    this.customRangeButtonTarget.setAttribute("aria-expanded", String(!hidden));
   }
 
   choosePlan(event) {
@@ -123,13 +129,6 @@ export default class extends Controller {
   changeSort(event) {
     this.#sort = event.currentTarget.value;
     this.#write(STORE.sort, this.#sort);
-    this.#draw();
-  }
-
-  toggleWidth() {
-    this.#wide = !this.#wide;
-    this.#write(STORE.wide, this.#wide ? "1" : "0");
-    this.#applyLayout();
     this.#draw();
   }
 
@@ -268,11 +267,21 @@ export default class extends Controller {
       el && event.target instanceof Node && el.contains(event.target);
     if (
       event.type === "pointerdown" &&
-      (inside(this.#menu) || inside(this.appearanceTarget))
+      (inside(this.#menu) ||
+        inside(this.appearanceTarget) ||
+        inside(this.removeDialogTarget))
     )
       return;
     this.#closeMenu();
     this.closeAppearance();
+    if (event.type === "keydown") {
+      this.closeRemove();
+      if (
+        this.hasNewPlanFormTarget &&
+        !this.newPlanFormTarget.classList.contains("hidden")
+      )
+        this.toggleNewPlan();
+    }
   }
 
   // --- plan state ---
@@ -471,12 +480,7 @@ export default class extends Controller {
 
     const charts = this.chartsColumnTarget.classList;
     charts.toggle("@4xl:col-span-5", this.#panelHidden);
-    charts.toggle("@4xl:col-span-3", !this.#panelHidden && !this.#wide);
-    charts.toggle("@4xl:col-span-2", !this.#panelHidden && this.#wide);
-    card.classList.toggle("@4xl:col-span-2", !this.#wide);
-    card.classList.toggle("@4xl:col-span-3", this.#wide);
-    if (this.hasWidthToggleTarget)
-      this.widthToggleTarget.setAttribute("aria-pressed", String(this.#wide));
+    charts.toggle("@4xl:col-span-3", !this.#panelHidden);
   }
 
   #updatePlanSummary() {
@@ -819,7 +823,7 @@ export default class extends Controller {
   }
 
   #drawExcludedNote(tree) {
-    const nodes = tree
+    const nodes = this.#listedTops(tree)
       .flatMap((top) =>
         top.excluded ? [top] : top.leaves.filter((l) => l.excluded),
       )
@@ -839,6 +843,9 @@ export default class extends Controller {
     const size = container.clientWidth;
     if (!size) return;
 
+    // A new group with no spending yet is drawn small and dashed, so there
+    // is something to drop categories onto.
+    const placeholder = (d3.mean(tree, (top) => top.total) || 1) * 0.15;
     const visible = tree
       .filter((top) => !this.#hidden.has(top.id))
       .map((top) => {
@@ -846,6 +853,8 @@ export default class extends Controller {
         const children = top.leaves.filter(
           (leaf) => !this.#hidden.has(leaf.id) && leaf.total > 0,
         );
+        if (top.group && !children.length)
+          return { ...top, children: null, total: placeholder, empty: true };
         return { ...top, children, total: d3.sum(children, (c) => c.total) };
       })
       .filter((top) => (top.children ? top.children.length : top.total > 0));
@@ -875,7 +884,8 @@ export default class extends Controller {
       .selectAll("g")
       .data(root.descendants().slice(1))
       .join("g")
-      .attr("transform", (d) => `translate(${d.x},${d.y})`);
+      .attr("transform", (d) => `translate(${d.x},${d.y})`)
+      .attr("data-node-id", (d) => d.data.id);
 
     node
       .append("circle")
@@ -887,7 +897,9 @@ export default class extends Controller {
         return d.data.excluded ? 0.25 : 0.55;
       })
       .attr("stroke", (d) => (d.data.excluded ? "currentColor" : d.data.color))
-      .attr("stroke-dasharray", (d) => (d.data.excluded ? "4 3" : null))
+      .attr("stroke-dasharray", (d) =>
+        d.data.excluded || d.data.empty ? "4 3" : null,
+      )
       .attr("stroke-width", (d) => (this.#isSelected(d) ? 3 : 1))
       .style("cursor", (d) => (d.depth === 1 ? "pointer" : null))
       .on("click", (_event, d) => {
@@ -910,14 +922,88 @@ export default class extends Controller {
           `${d.data.name}: ${this.#money.format(d.data.average)} / ${this.#money.format(d.data.median)}`,
       );
 
-    node
-      .filter((d) => d.depth === 1 && d.r > 34)
+    // Big super categories always show their name. Smaller ones, and every
+    // subcategory, show theirs while the pointer is over that super
+    // category, or while it's selected (a tap on a phone).
+    const topOf = (d) => (d.depth === 1 ? d : d.parent);
+    const labels = node
+      .filter((d) => d.depth === 1 || d.r > 12)
       .append("text")
       .attr("text-anchor", "middle")
-      .attr("y", (d) => (d.children ? -d.r + 16 : 4))
-      .attr("class", "fill-current text-primary text-xs font-medium")
+      .attr("y", (d) => (d.depth === 1 && d.children ? -d.r + 16 : 4))
+      .attr("class", (d) =>
+        d.depth === 1
+          ? "fill-current text-primary text-xs font-medium"
+          : "fill-current text-primary text-xs",
+      )
       .style("pointer-events", "none")
-      .text((d) => d.data.name);
+      .text((d) => this.#fit(d.data.name, d.r));
+    const showLabels = (top) =>
+      labels.style("opacity", (d) =>
+        (d.depth === 1 && d.r > 34) ||
+        topOf(d) === top ||
+        topOf(d).data.id === this.#selected
+          ? 1
+          : 0,
+      );
+    showLabels(null);
+    node
+      .on("mouseenter", (_event, d) => showLabels(topOf(d)))
+      .on("mouseleave", () => showLabels(null));
+
+    if (this.draftValue.can_edit && this.planValue.editable)
+      this.#enableCircleDrag(node, root);
+  }
+
+  // Drag a subcategory, or a super category with no subcategories, onto a
+  // super category to move it there; drop it outside every circle to make
+  // it top-level. Anything else snaps back.
+  #enableCircleDrag(node, root) {
+    const tops = root.children || [];
+    const movable = (d) =>
+      this.#categoriesById.has(d.data.id) && (d.depth === 2 || !d.children);
+    const over = (x, y, d) =>
+      tops.find(
+        (t) =>
+          t !== d &&
+          t.data.id !== UNCATEGORIZED &&
+          Math.hypot(x - t.x, y - t.y) < t.r,
+      );
+    const circles = node.select("circle");
+
+    node.filter(movable).call(
+      d3
+        .drag()
+        .clickDistance(4)
+        .on("start", function () {
+          d3.select(this).raise().style("cursor", "grabbing");
+        })
+        .on("drag", function (event, d) {
+          d3.select(this).attr("transform", `translate(${event.x},${event.y})`);
+          const target = over(event.x, event.y, d);
+          circles.attr("stroke-width", (c) => (c === target ? 3 : 1));
+        })
+        .on("end", (event, d) => {
+          const target = over(event.x, event.y, d);
+          const id = d.data.id;
+          const destination = target ? target.data.id : null;
+          const current = this.#parentOf(id);
+          const insideOwn = target && target === d.parent;
+          if (
+            !insideOwn &&
+            destination !== current &&
+            this.#canMove(id, destination)
+          )
+            this.#move(id, destination);
+          else this.#drawCharts();
+        }),
+    );
+  }
+
+  // Shortens a name to roughly fit across a circle of radius `r`.
+  #fit(name, r) {
+    const chars = Math.max(3, Math.floor((r * 2 - 6) / 6.5));
+    return name.length > chars ? `${name.slice(0, chars - 1)}…` : name;
   }
 
   #nodeFor(tree, id) {
@@ -1144,7 +1230,6 @@ export default class extends Controller {
 
   #row(node, money, depth, top) {
     const hidden = this.#hidden.has(node.id);
-    const details = this.#wide ? "" : "@4xl:hidden";
     const li = document.createElement("li");
     li.className = `flex items-center gap-2 py-2 ${depth ? "pl-5" : ""} ${hidden || node.excluded ? "opacity-60" : ""}`;
     li.style.webkitTouchCallout = "none";
@@ -1162,7 +1247,7 @@ export default class extends Controller {
     }
 
     const values = document.createElement("span");
-    values.className = `block text-xs tabular-nums text-subdued ${details}`;
+    values.className = "block text-xs tabular-nums text-subdued";
     values.textContent = `${money.format(node.average)} · ${money.format(node.median)}`;
 
     const text = document.createElement("div");
@@ -1280,7 +1365,9 @@ export default class extends Controller {
     input.name = name;
     input.value = value;
     if (name === "plan[expected_income]") input.id = "plan_expected_income";
-    input.className = "form-field__input text-right tabular-nums";
+    // No spin buttons: desktop browsers draw them, phones don't.
+    input.className =
+      "form-field__input text-right tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none";
     input.setAttribute("aria-label", label);
     if (id) {
       input.dataset.nodeId = id;
@@ -1410,7 +1497,7 @@ export default class extends Controller {
     menu.setAttribute("role", "menu");
     menu.setAttribute("aria-label", target.node.name);
     menu.className =
-      "fixed z-50 min-w-56 max-w-[calc(100vw-2rem)] max-h-[70vh] overflow-y-auto p-1 bg-container rounded-xl shadow-border-xs text-sm";
+      "fixed z-50 w-60 max-w-[calc(100vw-2rem)] max-h-[70vh] overflow-y-auto p-1 bg-container rounded-xl shadow-border-xs text-sm";
     for (const item of this.#menuItems(target)) menu.append(item);
     this.element.append(menu);
     this.#menu = menu;
@@ -1520,27 +1607,6 @@ export default class extends Controller {
       items.push(this.#menuSeparator());
     }
 
-    if (canPlan && isCategory) {
-      items.push(this.#menuLabel(this.#label("menu.move_to")));
-      const current = this.#parentOf(id);
-      const tops = this.#tree.filter(
-        (t) => t.id !== UNCATEGORIZED && t.id !== id,
-      );
-      const targets = [
-        { id: null, name: this.#label("menu.top_level") },
-      ].concat(tops.map((t) => ({ id: t.id, name: t.name })));
-      for (const t of targets) {
-        items.push(
-          this.#menuItem(t.name, () => this.#move(id, t.id), {
-            indent: true,
-            checked: t.id === current,
-            disabled: t.id !== current && !this.#canMove(id, t.id),
-          }),
-        );
-      }
-      items.push(this.#menuSeparator());
-    }
-
     if (canPlan && (isCategory || isGroup)) {
       items.push(
         this.#menuItem(this.#label("menu.rename"), () => this.#rename(node)),
@@ -1559,7 +1625,12 @@ export default class extends Controller {
           ),
         );
       }
-      items.push(...this.#removeItems(node, isGroup));
+      items.push(
+        this.#menuItem(
+          this.#label(isGroup ? "menu.remove_group" : "menu.remove"),
+          () => this.#startRemove(node),
+        ),
+      );
       items.push(this.#menuSeparator());
     }
 
@@ -1583,61 +1654,127 @@ export default class extends Controller {
     return items;
   }
 
-  #removeItems(node, isGroup) {
+  // Removing: with nothing to move it happens straight away; otherwise a
+  // dialog says where the subcategories go (top level) and asks where the
+  // transactions go: another category or a new one.
+  #startRemove(node) {
     const id = node.id;
-    const hasChildren = this.#childrenOf(id).length > 0;
-    if (isGroup) {
-      const text = this.#label(
-        hasChildren ? "menu.remove_needs_empty" : "menu.remove_group",
-      );
-      return [
-        this.#menuItem(
-          text,
-          () =>
-            this.#changePlan((plan) => {
-              plan.groups = plan.groups.filter((g) => g.key !== id);
-              plan.excluded = plan.excluded.filter((e) => e !== id);
-            }),
-          { disabled: hasChildren },
-        ),
-      ];
-    }
-    if (hasChildren) {
-      return [
-        this.#menuItem(this.#label("menu.remove_needs_empty"), () => {}, {
-          disabled: true,
-        }),
-      ];
+    const category = this.#categoriesById.get(id);
+    const children = this.#childrenOf(id);
+    const count = category?.transaction_count || 0;
+    if (!children.length && !count) {
+      this.#remove(id, null);
+      return;
     }
 
-    if (!this.#categoriesById.get(id).has_transactions) {
-      return [
-        this.#menuItem(this.#label("menu.remove"), () =>
-          this.#remove(id, null),
-        ),
-      ];
+    this.#removing = { id, count, group: !category };
+    this.removeTitleTarget.textContent = this.#label("remove.title", {
+      name: node.name,
+    });
+    this.removeChildrenNoteTarget.textContent = children.length
+      ? this.#label("remove.children", {
+          names: children.map((c) => this.#look(c.id).name).join(", "),
+        })
+      : "";
+    this.removeChildrenNoteTarget.classList.toggle("hidden", !children.length);
+    this.removeTargetFieldsTarget.classList.toggle("hidden", !count);
+    this.removeErrorTarget.textContent = "";
+
+    if (count) {
+      this.removeTargetLabelTarget.textContent = this.#label(
+        "remove.transactions_label",
+        { count },
+      );
+      const select = this.removeTargetTarget;
+      select.replaceChildren(
+        ...this.#transactionTargets(id).map((t) => new Option(t.name, t.id)),
+        new Option(this.#label("remove.new_category"), "__new__"),
+      );
+      this.removeNewNameTarget.value = "";
+      this.removeTargetChanged();
     }
-    const items = [this.#menuLabel(this.#label("menu.move_transactions"))];
-    const targets = this.historyValue.categories
+    this.removeDialogTarget.classList.remove("hidden");
+    const rect = this.removeDialogTarget.getBoundingClientRect();
+    this.removeDialogTarget.style.left = `${Math.max(8, (window.innerWidth - rect.width) / 2)}px`;
+    this.removeDialogTarget.style.top = `${Math.max(8, (window.innerHeight - rect.height) / 3)}px`;
+    (count
+      ? this.removeTargetTarget
+      : this.removeDialogTarget.querySelector("button")
+    )?.focus();
+  }
+
+  removeTargetChanged() {
+    const isNew = this.removeTargetTarget.value === "__new__";
+    this.removeNewNameFieldTarget.classList.toggle("hidden", !isNew);
+    if (isNew) this.removeNewNameTarget.focus();
+  }
+
+  closeRemove() {
+    this.removeDialogTarget.classList.add("hidden");
+    this.#removing = null;
+  }
+
+  confirmRemove() {
+    if (!this.#removing) return;
+    const { id, count } = this.#removing;
+    let target = null;
+    let newGroup = null;
+
+    if (count) {
+      target = this.removeTargetTarget.value;
+      if (target === "__new__") {
+        const name = this.removeNewNameTarget.value.trim();
+        const error = !name
+          ? this.#label("remove.new_name_required")
+          : this.#nameTaken(name, id) &&
+            this.#label("remove.name_taken", { name });
+        if (error) {
+          this.removeErrorTarget.textContent = error;
+          return;
+        }
+        newGroup = {
+          key: this.#newKey(),
+          name,
+          color: this.#look(id).color,
+          icon: this.#look(id).icon,
+        };
+        target = newGroup.key;
+      }
+    }
+
+    this.closeRemove();
+    this.#remove(id, target, newGroup);
+  }
+
+  // Every category or new group the transactions could go to, by name.
+  #transactionTargets(id) {
+    return this.historyValue.categories
       .filter((c) => c.id !== id && !this.#removed(c.id))
       .map((c) => ({ id: c.id, name: this.#look(c.id).name }))
       .concat(
-        (this.#plan?.groups || []).map((g) => ({ id: g.key, name: g.name })),
+        (this.#plan?.groups || [])
+          .filter((g) => g.key !== id)
+          .map((g) => ({ id: g.key, name: g.name })),
       )
       .sort((a, b) => a.name.localeCompare(b.name));
-    for (const t of targets) {
-      items.push(
-        this.#menuItem(t.name, () => this.#remove(id, t.id), { indent: true }),
-      );
-    }
-    return items;
   }
 
-  #remove(id, target) {
+  #remove(id, target, newGroup = null) {
+    const children = this.#childrenOf(id).map((c) => c.id);
     this.#changePlan((plan) => {
+      if (newGroup) plan.groups.push(newGroup);
+      for (const child of children) {
+        const live = this.#categoriesById.get(child)?.parent_id ?? null;
+        if (live === null) delete plan.parents[child];
+        else plan.parents[child] = null;
+      }
+      plan.excluded = plan.excluded.filter((e) => e !== id);
+      if (this.#group(id)) {
+        plan.groups = plan.groups.filter((g) => g.key !== id);
+        return;
+      }
       plan.removals[id] = target;
       delete plan.parents[id];
-      plan.excluded = plan.excluded.filter((e) => e !== id);
     });
   }
 

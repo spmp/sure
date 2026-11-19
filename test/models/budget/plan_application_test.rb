@@ -113,6 +113,24 @@ class Budget::PlanApplicationTest < ActiveSupport::TestCase
     assert_equal 500, allocation(@food)
   end
 
+  test "a category removed into a new group takes its transactions and budget row with it" do
+    loan = @family.categories.create!(name: "Loan interest")
+    account = @family.accounts.create!(name: "Checking", currency: @family.currency, balance: 0, accountable: Depository.new)
+    entry = Entry.create!(account: account, name: "Interest", date: Date.new(2026, 4, 2), currency: @family.currency, amount: 35,
+                          entryable: Transaction.new(category: loan))
+    @budget.sync_budget_categories
+    @budget.budget_categories.load
+    plan = save_draft(groups: [ { "key" => "new-0000000b", "name" => "Interest", "color" => "#805dee", "icon" => "folder" } ])
+    plan.update!(removals: { loan.id => "new-0000000b" })
+
+    apply(categories: { "new-0000000b" => 40 }, plan: plan)
+
+    interest = @family.categories.find_by!(name: "Interest")
+    assert_equal interest.id, entry.reload.entryable.category_id
+    assert_equal 40, allocation(interest)
+    refute Category.exists?(loan.id)
+  end
+
   private
     def apply(categories:, uncategorized: 0, expected_income: nil, plan: nil)
       Budget::PlanApplication.new(@budget, categories: categories, uncategorized: uncategorized,

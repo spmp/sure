@@ -12,7 +12,7 @@
     <div>
       <h1 class="text-xl font-medium text-primary"><%= t(".title") %></h1>
       <p class="text-sm text-secondary">
-        <%= t(".subtitle",
+        <%= t(@history.includes_current_period? ? ".subtitle_in_progress" : ".subtitle",
               start_date: l(@history.periods.first.first, format: :long),
               end_date: l(@history.periods.last.last, format: :long),
               count: @history.periods.size,
@@ -20,36 +20,35 @@
       </p>
     </div>
 
+    <div class="ml-auto flex flex-wrap items-center justify-end gap-2">
+      <%= render UI::PeriodPicker.new(
+            selected: @period,
+            url: budget_planner_path(@budget),
+            extra_params: budget_owner_query
+          ) %>
+      <%= render DS::Button.new(text: t(".custom_range"), variant: "outline", icon: "calendar-range", type: "button",
+            aria: { expanded: "false" },
+            data: { action: "budget-planner#toggleCustomRange", budget_planner_target: "customRangeButton" }) %>
+    </div>
     <%= form_with url: budget_planner_path(@budget), method: :get, local: true,
-          class: "ml-auto flex flex-wrap items-end gap-2",
-          data: { turbo_action: "replace", budget_planner_target: "rangeForm" } do %>
+          class: "hidden w-full flex flex-wrap items-end justify-end gap-2",
+          data: { budget_planner_target: "customRange" } do %>
       <% budget_owner_query.each do |name, value| %>
         <%= hidden_field_tag name, value, id: nil, autocomplete: "off" %>
       <% end %>
-      <div class="form-field w-44">
+      <div class="form-field w-40">
         <div class="form-field__body">
-          <label for="planner_period" class="form-field__label"><%= t(".range_label") %></label>
-          <%= select_tag :period,
-                options_for_select(BudgetPlannersController::PERIOD_KEYS.map { |key| [ Period::PERIODS[key][:label], key ] } + [ [ t(".custom_range"), "custom" ] ], @period_key),
-                id: "planner_period", class: "form-field__input", autocomplete: "off",
-                data: { action: "budget-planner#changePeriod" } %>
+          <label for="planner_start_date" class="form-field__label"><%= t(".start_date") %></label>
+          <%= date_field_tag :start_date, @period.start_date, id: "planner_start_date", class: "form-field__input", autocomplete: "off", required: true %>
         </div>
       </div>
-      <div class="<%= "hidden" unless @period_key == "custom" %> flex items-end gap-2" data-budget-planner-target="customRange">
-        <div class="form-field w-36">
-          <div class="form-field__body">
-            <label for="planner_start_date" class="form-field__label"><%= t(".start_date") %></label>
-            <%= date_field_tag :start_date, @history.periods.first.first, id: "planner_start_date", class: "form-field__input", autocomplete: "off" %>
-          </div>
+      <div class="form-field w-40">
+        <div class="form-field__body">
+          <label for="planner_end_date" class="form-field__label"><%= t(".end_date") %></label>
+          <%= date_field_tag :end_date, @period.end_date, id: "planner_end_date", class: "form-field__input", autocomplete: "off", required: true %>
         </div>
-        <div class="form-field w-36">
-          <div class="form-field__body">
-            <label for="planner_end_date" class="form-field__label"><%= t(".end_date") %></label>
-            <%= date_field_tag :end_date, @history.periods.last.last, id: "planner_end_date", class: "form-field__input", autocomplete: "off" %>
-          </div>
-        </div>
-        <%= render DS::Button.new(text: t(".show_range"), variant: "outline", type: "submit") %>
       </div>
+      <%= render DS::Button.new(text: t(".show_range"), variant: "outline", type: "submit") %>
     <% end %>
   </div>
 
@@ -107,9 +106,6 @@
           <% end %>
         <% end %>
         <div class="ml-auto hidden @4xl:flex items-center gap-1">
-          <%= render DS::Button.new(variant: "icon", icon: "columns-2", type: "button",
-                aria: { label: t(".toggle_width"), pressed: "false" }, title: t(".toggle_width"),
-                data: { action: "budget-planner#toggleWidth", budget_planner_target: "widthToggle" }) %>
           <%= render DS::Button.new(variant: "icon", icon: "panel-right-close", type: "button",
                 aria: { label: t(".hide_panel") }, title: t(".hide_panel"),
                 data: { action: "budget-planner#hidePanel" }) %>
@@ -138,7 +134,8 @@
               </label>
             <% end %>
           </fieldset>
-          <div class="flex justify-end">
+          <div class="flex justify-end gap-2">
+            <%= render DS::Button.new(text: t(".cancel"), variant: "ghost", type: "button", data: { action: "budget-planner#toggleNewPlan" }) %>
             <%= render DS::Button.new(text: t(".create_plan"), type: "button", data: { action: "budget-planner#createPlan" }) %>
           </div>
         </div>
@@ -258,6 +255,35 @@
     <% end %>
     <div class="flex justify-end">
       <%= render DS::Button.new(text: t(".done"), variant: "outline", type: "button", data: { action: "budget-planner#closeAppearance" }) %>
+    </div>
+  </div>
+
+  <%# Remove a category: where its transactions go. Filled by the controller. %>
+  <div class="hidden fixed z-50 w-96 max-w-[calc(100vw-2rem)] p-4 bg-container rounded-2xl shadow-border-xs space-y-3"
+       role="dialog" aria-modal="true" aria-labelledby="planner_remove_title"
+       data-budget-planner-target="removeDialog">
+    <p id="planner_remove_title" class="text-sm font-medium text-primary" data-budget-planner-target="removeTitle"></p>
+    <p class="text-sm text-secondary" data-budget-planner-target="removeChildrenNote"></p>
+    <div class="space-y-2" data-budget-planner-target="removeTargetFields">
+      <div class="form-field">
+        <div class="form-field__body">
+          <label for="planner_remove_target" class="form-field__label" data-budget-planner-target="removeTargetLabel"></label>
+          <select id="planner_remove_target" class="form-field__input" autocomplete="off"
+                  data-budget-planner-target="removeTarget" data-action="budget-planner#removeTargetChanged"></select>
+        </div>
+      </div>
+      <div class="hidden form-field" data-budget-planner-target="removeNewNameField">
+        <div class="form-field__body">
+          <label for="planner_remove_new_name" class="form-field__label"><%= t(".remove_new_name") %></label>
+          <input type="text" id="planner_remove_new_name" class="form-field__input" maxlength="60" autocomplete="off"
+                 data-budget-planner-target="removeNewName">
+        </div>
+      </div>
+    </div>
+    <p class="text-xs text-destructive" data-budget-planner-target="removeError" role="alert"></p>
+    <div class="flex justify-end gap-2">
+      <%= render DS::Button.new(text: t(".cancel"), variant: "ghost", type: "button", data: { action: "budget-planner#closeRemove" }) %>
+      <%= render DS::Button.new(text: t(".remove"), variant: "destructive", type: "button", data: { action: "budget-planner#confirmRemove" }) %>
     </div>
   </div>
 

@@ -65,6 +65,8 @@ class Budget::PlanApplication
       budget.lock!
       BudgetPlanBackup.capture!(budget, user: user)
       moved_ids = apply_plan!
+      # The plan's merges add and remove budget rows behind the association.
+      budget.budget_categories.reset
       budget.sync_budget_categories
       rows = budget.budget_categories.reload.includes(:category).lock.to_a
       rows.each do |bc|
