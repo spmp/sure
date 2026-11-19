@@ -13,6 +13,25 @@ en:
       panel_title: Categories
       panel_columns: Average · median per month
       fill_label: Fill amounts from
+      mode_label: Which categories to plan with
+      mode:
+        live: Current categories
+        draft: Draft grouping
+      toggle_width: Toggle panel width
+      new_group: New group
+      new_group_placeholder: New group name
+      draft_hint: Use "Move to" on a row, or drag a row onto a group. Saved as you go; nothing changes until you apply.
+      start_again: Start again
+      start_again_confirm:
+        title: Start the draft again?
+        body: The draft goes back to your current categories. Nothing that's been applied changes.
+      stale:
+        title: Categories changed since this draft was made
+        body: Someone edited categories elsewhere. Start the draft again to plan from the current categories.
+      restore: Restore setup from %{date}
+      restore_confirm:
+        title: Restore the earlier setup?
+        body: Categories and the %{budget} budget go back to how they were before the last apply. Groups created since are kept.
       fill:
         average: Average
         median: Median
@@ -37,6 +56,21 @@ en:
         total: Total
         empty: No spending in this range yet.
         all_categories: All categories
+        move_to: "Move %{name} to"
+        top_level: Top level
+        moved: Moved
+        new_group: New
+        remove_group: Remove
+        saving: Saving draft…
+        saved: Draft saved
+        save_failed: "Couldn't save the draft: %{error}"
+        draft_summary: "Applying also moves %{moves} and creates %{groups}."
+        moves:
+          one: 1 category
+          other: "%{count} categories"
+        groups:
+          one: 1 group
+          other: "%{count} groups"
         below_minimum: "At least %{amount}: its subcategories' own amounts"
         amount_label: "%{name} budget per month"
     update:

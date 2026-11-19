@@ -77,4 +77,39 @@ class BudgetPlannerTest < ApplicationSystemTestCase
     assert_equal 1600, home.budgeted_spending
     assert_equal 4200, budget.expected_income
   end
+
+  test "draft a new group, apply it with the amounts, then restore" do
+    visit budget_planner_path(Budget.date_to_param(Date.current))
+    click_on "Draft grouping"
+
+    fill_in "New group name", with: "Going out"
+    click_on "New group"
+    within("[data-budget-planner-target='panel']") do
+      assert_text "Going out"
+      find("select[aria-label='Move Eating out to']").select("Going out")
+      assert_text "Moved"
+    end
+    assert_selector "[data-budget-planner-target='draftStatus']", text: "Draft saved"
+    assert_text "Applying also moves 1 category and creates 1 group."
+    save_screenshot(Rails.root.join("tmp/screenshots/budget_planner_draft.png"))
+
+    page.driver.browser.manage.window.resize_to(2200, 1400)
+    find("[data-budget-planner-target='widthToggle']").click
+    assert_selector "[data-budget-planner-target='widthToggle'][aria-pressed='true']"
+    save_screenshot(Rails.root.join("tmp/screenshots/budget_planner_wide.png"))
+
+    click_on "Apply to"
+    within("#confirm-dialog") { click_on "Apply" }
+    assert_text "now uses these amounts"
+
+    family = @user.family
+    going_out = family.categories.find_by!(name: "Going out")
+    assert_equal going_out.id, family.categories.find_by!(name: "Eating out").parent_id
+
+    visit budget_planner_path(Budget.date_to_param(Date.current))
+    click_on "Restore setup from"
+    within("#confirm-dialog") { click_on "Restore setup from" }
+    assert_text "back as they were"
+    assert_equal family.categories.find_by!(name: "Food shopping").id, family.categories.find_by!(name: "Eating out").parent_id
+  end
 end

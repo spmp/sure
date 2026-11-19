@@ -39,6 +39,9 @@ class Budget::PlanApplication
         own = rows.select { |child| child.category.parent_id == bc.category_id && !child.inherits_parent_budget? }
         [ bc.category_id, own.sum { |child| child.budgeted_spending || 0 }.to_f ]
       end,
+      # Subcategories with their own amount; the rest share their parent's.
+      own_amounts: rows.select(&:subcategory?).reject(&:inherits_parent_budget?)
+                       .to_h { |bc| [ bc.category_id, bc.budgeted_spending.to_f ] },
       uncategorized: budget.initialized? ? [ budget.available_to_allocate, 0 ].max.to_f : nil,
       expected_income: budget.expected_income&.to_f
     }

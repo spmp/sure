@@ -4,7 +4,8 @@
      data-budget-planner-history-value="<%= @history.as_json.to_json %>"
      data-budget-planner-plan-value="<%= @plan_state.to_json %>"
      data-budget-planner-draft-value="<%= @draft_state.to_json %>"
-     data-budget-planner-backup-value="<%= @backup_state.to_json %>"
+     data-budget-planner-draft-url-value="<%= budget_planner_draft_path(@budget, **budget_owner_query) %>"
+     data-budget-planner-colors-value="<%= Category::COLORS.to_json %>"
      data-budget-planner-labels-value="<%= t(".js").to_json %>">
   <div class="flex flex-wrap items-center gap-3">
     <div>
@@ -27,8 +28,12 @@
     </div>
   </div>
 
+  <% if @draft_state[:stale] %>
+    <%= render DS::Alert.new(variant: :warning, title: t(".stale.title"), message: t(".stale.body")) %>
+  <% end %>
+
   <div class="grid grid-cols-1 @4xl:grid-cols-5 gap-4">
-    <div class="@4xl:col-span-3 space-y-4">
+    <div class="@4xl:col-span-3 space-y-4" data-budget-planner-target="chartsColumn">
       <%= render DS::Card.new do %>
         <h2 class="text-sm font-medium text-secondary mb-2"><%= t(".circles_title") %></h2>
         <div class="w-full aspect-square max-w-xl mx-auto" data-budget-planner-target="circles"></div>
@@ -43,9 +48,46 @@
       <% end %>
     </div>
 
-    <%= render DS::Card.new(class: "@4xl:col-span-2") do %>
+    <%= render DS::Card.new(class: "@4xl:col-span-2", data: { budget_planner_target: "panelCard" }) do %>
+      <div class="flex flex-wrap items-center gap-2 mb-3">
+        <% if @draft_state[:can_edit] && @plan_state[:editable] %>
+          <%= render DS::SegmentedControl.new(aria_label: t(".mode_label"), class: "bg-surface-inset") do |control| %>
+            <% control.with_segment(t(".mode.live"), data: { action: "budget-planner#setMode", mode: "live", budget_planner_target: "modeButton" }) %>
+            <% control.with_segment(t(".mode.draft"), data: { action: "budget-planner#setMode", mode: "draft", budget_planner_target: "modeButton" }) %>
+          <% end %>
+        <% end %>
+        <span class="text-xs text-subdued" data-budget-planner-target="draftStatus" role="status"></span>
+        <div class="ml-auto hidden @4xl:block">
+          <%= render DS::Button.new(variant: "icon", icon: "panel-right-open", type: "button",
+                aria: { label: t(".toggle_width"), pressed: "false" },
+                title: t(".toggle_width"),
+                data: { action: "budget-planner#toggleWidth", budget_planner_target: "widthToggle" }) %>
+        </div>
+      </div>
+
+      <div class="hidden mb-3 space-y-2" data-budget-planner-target="draftTools">
+        <div class="flex items-center gap-2">
+          <div class="form-field flex-1">
+            <input type="text" class="form-field__input" maxlength="60" autocomplete="off"
+                   placeholder="<%= t(".new_group_placeholder") %>"
+                   aria-label="<%= t(".new_group_placeholder") %>"
+                   data-budget-planner-target="newGroupName"
+                   data-action="keydown.enter->budget-planner#addGroup:prevent">
+          </div>
+          <%= render DS::Button.new(text: t(".new_group"), variant: "outline", icon: "plus", type: "button",
+                data: { action: "budget-planner#addGroup" }) %>
+        </div>
+        <div class="flex items-center justify-between gap-2 text-xs text-secondary">
+          <span><%= t(".draft_hint") %></span>
+          <%= render DS::Button.new(text: t(".start_again"), variant: "ghost", size: :sm,
+                href: budget_planner_draft_path(@budget, **budget_owner_query), method: :delete,
+                confirm: CustomConfirm.new(title: t(".start_again_confirm.title"), body: t(".start_again_confirm.body"), btn_text: t(".start_again"))) %>
+        </div>
+      </div>
+
       <%= form_with url: budget_planner_path(@budget, **budget_owner_query), method: :patch, scope: :plan,
             data: { budget_planner_target: "form" } do %>
+        <input type="hidden" name="plan[apply_grouping]" value="0" autocomplete="off" data-budget-planner-target="applyGrouping">
         <div class="flex items-start justify-between gap-2 mb-3">
           <div>
             <h2 class="text-sm font-medium text-secondary"><%= t(".panel_title") %></h2>
@@ -78,7 +120,8 @@
         </div>
 
         <% if @plan_state[:editable] %>
-          <div class="mt-4 flex justify-end">
+          <p class="mt-3 text-xs text-secondary hidden" data-budget-planner-target="draftSummary"></p>
+          <div class="mt-4 flex flex-wrap items-center justify-end gap-2">
             <%= render DS::Button.new(
                   text: t(".apply", budget: @budget.name),
                   type: "submit",
@@ -91,6 +134,23 @@
                 ) %>
           </div>
         <% end %>
+      <% end %>
+
+      <% if @backup_state && @draft_state[:can_edit] && @plan_state[:editable] %>
+        <% restore_text = t(".restore", date: l(Time.zone.parse(@backup_state[:created_at]), format: :short)) %>
+        <div class="mt-2 flex justify-end">
+          <%= render DS::Button.new(
+                text: restore_text,
+                variant: "ghost",
+                href: budget_planner_restore_path(@budget, **budget_owner_query),
+                method: :post,
+                confirm: CustomConfirm.new(
+                  title: t(".restore_confirm.title"),
+                  body: t(".restore_confirm.body", budget: @backup_state[:budget_name] || @budget.name),
+                  btn_text: restore_text
+                )
+              ) %>
+        </div>
       <% end %>
     <% end %>
   </div>
