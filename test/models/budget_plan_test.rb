@@ -148,6 +148,35 @@ class BudgetPlanTest < ActiveSupport::TestCase
     refute draft(removals: { @coffee.id => @food.id, @food.id => nil }).valid?
   end
 
+  test "a new category can wait in Uncategorized and is created without a parent" do
+    d = draft(groups: [ group("new-0000000a", "Interest") ], parents: { "new-0000000a" => "uncategorized" })
+    assert d.valid?
+
+    ids = d.apply!
+    assert_nil Category.find(ids["new-0000000a"]).parent_id
+  end
+
+  test "a new category can go under a parent category, existing or new" do
+    d = draft(groups: [ group("new-0000000a", "Interest"), group("new-0000000b", "Money") ],
+              parents: { "new-0000000a" => @home.id, "new-0000000b" => nil })
+    ids = d.apply!
+    assert_equal @home.id, Category.find(ids["new-0000000a"]).parent_id
+
+    other = draft(name: "Two", groups: [ group("new-0000000c", "Fees"), group("new-0000000d", "Bank") ],
+                  parents: { "new-0000000c" => "new-0000000d" })
+    ids = other.apply!
+    assert_equal ids["new-0000000d"], Category.find(ids["new-0000000c"]).parent_id
+  end
+
+  test "only new categories can wait in Uncategorized" do
+    refute draft(parents: { @coffee.id => "uncategorized" }).valid?
+  end
+
+  test "a new category under a parent can't have subcategories of its own" do
+    refute draft(groups: [ group("new-0000000a", "Fees") ],
+                 parents: { "new-0000000a" => @home.id, @coffee.id => "new-0000000a" }).valid?
+  end
+
   test "exclusions name categories, groups or uncategorized" do
     assert draft(excluded: [ @coffee.id, "uncategorized" ]).valid?
     refute draft(excluded: [ "nope" ]).valid?

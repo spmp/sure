@@ -1,0 +1,36 @@
+---
+en:
+  activerecord:
+    attributes:
+      budget_plan:
+        name: Plan name
+        parents: Category moves
+        groups: New categories
+        overrides: Category changes
+        removals: Removals
+        excluded: Exclusions
+    errors:
+      models:
+        budget_plan:
+          duplicate_name: Two categories would have the same name
+          attributes:
+            parents:
+              unknown_category: include a category that no longer exists
+              unknown_parent: put a category under one that can't hold it
+              too_deep: would nest more than two levels
+            groups:
+              invalid_key: have an invalid key
+              blank_name: need a name
+              invalid_color: need a valid colour
+            overrides:
+              unknown_category: include a category that no longer exists
+              blank_name: can't make a name blank
+              invalid_color: need a valid colour
+              invalid_icon: need a valid icon
+            removals:
+              unknown_category: include a category that no longer exists
+              has_subcategories: include a category that still has subcategories
+              has_transactions: need somewhere to move the transactions
+              invalid_target: move transactions to a category that won't exist
+            excluded:
+              unknown: include something that no longer exists

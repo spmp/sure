@@ -81,6 +81,31 @@ class BudgetPlannerTest < ApplicationSystemTestCase
     within(panel) { assert_text "Moved" }
   end
 
+  test "a category made by Remove waits in Uncategorized and can be dragged into a parent" do
+    visit six_months
+
+    menu_for("Loan interest")
+    click_on "Remove category…"
+    within(remove_dialog) do
+      select "New category…", from: "Move its 1 transactions to"
+      fill_in "Name for the new category", with: "Interest"
+      click_on "Remove"
+    end
+
+    uncategorized = find("g[data-node-id='uncategorized']")
+    interest = find("g[data-node-id^='new-']")
+    assert_operator Math.hypot(*circle_center(interest).zip(circle_center(uncategorized)).map { |a, b| a - b }), :<, circle_radius(uncategorized)
+
+    home = @family.categories.find_by!(name: "Home costs")
+    interest.drag_to(find("g[data-node-id='#{home.id}']"))
+    assert_selector "[data-budget-planner-target='draftStatus']", text: "Plan saved"
+
+    click_on "Apply to"
+    within("#confirm-dialog") { click_on "Apply" }
+    assert_text "now uses these amounts"
+    assert_equal home.id, @family.categories.find_by!(name: "Interest").parent_id
+  end
+
   test "removing a category that is receiving moved transactions asks where they go instead" do
     visit six_months
 
@@ -138,8 +163,8 @@ class BudgetPlannerTest < ApplicationSystemTestCase
   test "changing categories starts a plan; rename, colour, icon, move, exclude, remove, apply, restore" do
     visit six_months
 
-    fill_in "New group name", with: "Going out"
-    click_on "New group"
+    fill_in "New parent category name", with: "Going out"
+    click_on "New parent category"
     assert_selector "[data-budget-planner-target='draftStatus']", text: "Plan saved"
     assert_selector "#planner_plan option:checked", text: "My plan"
 
@@ -272,6 +297,14 @@ class BudgetPlannerTest < ApplicationSystemTestCase
 
     def panel
       "[data-budget-planner-target='panel']"
+    end
+
+    def circle_center(node)
+      node[:transform].scan(/-?[\d.]+/).map(&:to_f)
+    end
+
+    def circle_radius(node)
+      node.find("circle", match: :first)[:r].to_f
     end
 
     def remove_dialog

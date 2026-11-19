@@ -2,9 +2,12 @@
 # planner. A family can keep several; live categories don't change until
 # one is applied.
 #
-# - `parents`: category id => new parent (category id, group key, or nil for
-#   the top level). Categories not listed keep their parent.
-# - `groups`: new top-level categories, [{ key, name, color, icon }].
+# - `parents`: category id or new category key => new parent (category id,
+#   new category key, or nil for the top level). Categories not listed keep
+#   their parent. A new category may also wait in "uncategorized", the
+#   planner's holding place; it is created without a parent.
+# - `groups`: new categories, [{ key, name, color, icon }]. Top-level (a
+#   parent category) unless `parents` puts them somewhere.
 # - `overrides`: category id => { name, color, icon } to change on apply.
 #   Colour only applies to top-level categories; Sure gives subcategories
 #   their parent's colour.
@@ -67,6 +70,7 @@ class BudgetPlan < ApplicationRecord
       end
 
       move_categories!(ids)
+      place_new_categories!(ids)
       remove_categories!(ids)
       apply_overrides!
 
@@ -102,6 +106,11 @@ class BudgetPlan < ApplicationRecord
       parents.key?(id) ? parents[id] : categories_by_id[id]&.parent_id
     end
 
+    # Categories and new categories that will exist once applied.
+    def kept_ids
+      (categories_by_id.keys - removals.keys) + group_keys
+    end
+
     def move_categories!(ids)
       moved = moved_categories
       # Detach first so a parent whose children leave can then be nested.
@@ -109,6 +118,15 @@ class BudgetPlan < ApplicationRecord
       moved.each do |category|
         target = parents[category.id]
         category.reload.update!(parent_id: ids.fetch(target, target)) if target
+      end
+    end
+
+    def place_new_categories!(ids)
+      group_keys.each do |key|
+        parent = parents[key]
+        next if parent.nil? || parent == UNCATEGORIZED
+
+        family.categories.find(ids[key]).update!(parent_id: ids.fetch(parent, parent))
       end
     end
 
@@ -137,7 +155,13 @@ class BudgetPlan < ApplicationRecord
 
     # Moving a category back where it was is no change.
     def drop_unchanged_parents
-      self.parents = parents.reject { |id, parent| categories_by_id.key?(id) && categories_by_id[id].parent_id == parent }
+      self.parents = parents.reject do |id, parent|
+        if categories_by_id.key?(id)
+          categories_by_id[id].parent_id == parent
+        else
+          parent.nil? && group_keys.include?(id)
+        end
+      end
     end
 
     def name_is_unique
@@ -148,20 +172,22 @@ class BudgetPlan < ApplicationRecord
     def tree_is_valid
       keys = group_keys
       parents.each do |id, parent|
-        unless categories_by_id.key?(id)
+        unless categories_by_id.key?(id) || keys.include?(id)
           errors.add(:parents, :unknown_category)
           next
         end
-        next if parent.nil? || keys.include?(parent)
+        next if parent.nil?
 
-        if !categories_by_id.key?(parent) || parent == id || removals.key?(parent)
+        if parent == UNCATEGORIZED
+          errors.add(:parents, :unknown_parent) unless keys.include?(id)
+        elsif !(categories_by_id.key?(parent) || keys.include?(parent)) || parent == id || removals.key?(parent)
           errors.add(:parents, :unknown_parent)
         elsif effective_parent(parent)
           errors.add(:parents, :too_deep)
         end
       end
 
-      kept = categories_by_id.keys - removals.keys
+      kept = kept_ids
       parented = kept.select { |id| effective_parent(id) }
       if parented.any? { |id| kept.any? { |child| effective_parent(child) == id } }
         errors.add(:parents, :too_deep)

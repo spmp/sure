@@ -33,8 +33,8 @@ en:
       remove_new_name: Name for the new category
       hide_panel: Hide panel
       show_panel: Show panel
-      new_group: New group
-      new_group_placeholder: New group name
+      new_group: New parent category
+      new_group_placeholder: New parent category name
       sort_label: Sort by
       sort:
         spending: Spending
@@ -45,14 +45,14 @@ en:
         average: Average
         median: Median
         current: Current
-      panel_columns: Average · median per month. Right-click a row or circle, long-press it, or use ⋯ for more. Drag a circle onto another to move it.
+      panel_columns: Average · median per month. Right-click a row or circle, long-press it, or use ⋯ for more. Drag a circle onto a parent category to move it there. New categories wait in Uncategorized until you do.
       budget_total: Budget total
       expected_income: Expected income
       remaining: Remaining
       apply: Apply to %{budget}
       confirm:
         title: Apply to %{budget}?
-        body: The amounts shown replace this budget's amounts for these categories, its total and its expected income, and any category changes in the plan are made. A backup is saved first so you can restore it. Other months' amounts aren't changed.
+        body: The amounts shown replace this budget's amounts for these categories, its total and its expected income, and any category changes in the plan are made. New categories still in Uncategorized are created without a parent. A backup is saved first so you can restore it. Other months' amounts aren't changed.
         button: Apply
       stale:
         title: Categories changed since this plan was made
@@ -93,7 +93,7 @@ en:
         default_plan_name: My plan
         remove:
           title: "Remove %{name}?"
-          children: "Its subcategories (%{names}) become top-level categories."
+          children: "Its subcategories (%{names}) become parent categories of their own."
           transactions_label: "Move its %{count} transactions to"
           new_category: New category…
           new_name_required: Enter a name for the new category.

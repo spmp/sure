@@ -304,10 +304,15 @@ export default class extends Controller {
     return this.#categoriesById.get(id)?.parent_id ?? null;
   }
 
+  // Categories and the plan's new categories under `id`.
   #childrenOf(id) {
-    return this.historyValue.categories.filter(
+    const categories = this.historyValue.categories.filter(
       (c) => !this.#removed(c.id) && this.#parentOf(c.id) === id,
     );
+    const created = (this.#plan?.groups || [])
+      .filter((g) => this.#parentOf(g.key) === id)
+      .map((g) => ({ id: g.key, parent_id: null, isNew: true }));
+    return [...categories, ...created];
   }
 
   #group(key) {
@@ -344,10 +349,15 @@ export default class extends Controller {
     return [...names, ...groups].some((n) => n.toLowerCase() === lower);
   }
 
+  // Sure keeps two levels: only a category with no subcategories can go
+  // under another, and only under a top-level one. Uncategorized only
+  // holds the plan's new categories.
   #canMove(id, target) {
+    const isNew = Boolean(this.#group(id));
     if (target === null) return true;
     if (target === id || this.#childrenOf(id).length > 0) return false;
-    if (this.#group(target)) return true;
+    if (target === UNCATEGORIZED) return isNew;
+    if (this.#group(target)) return this.#parentOf(target) === null;
     return (
       this.#categoriesById.has(target) &&
       !this.#removed(target) &&
@@ -681,8 +691,10 @@ export default class extends Controller {
     const tops = categories
       .filter((c) => !this.#removed(c.id) && this.#parentOf(c.id) === null)
       .map((c) => ({ id: c.id, ...this.#look(c.id) }));
-    for (const group of this.#plan?.groups || [])
-      tops.push({ id: group.key, ...this.#look(group.key), group: true });
+    for (const group of this.#plan?.groups || []) {
+      if (this.#parentOf(group.key) === null)
+        tops.push({ id: group.key, ...this.#look(group.key), group: true });
+    }
 
     for (const top of tops) {
       const live = this.#categoriesById.get(top.id);
@@ -706,7 +718,8 @@ export default class extends Controller {
           icon: look.icon,
           color: top.color,
           series: this.#spendingOf(child.id) || this.#zeros(),
-          moved: child.parent_id !== top.id,
+          group: Boolean(child.isNew),
+          moved: !child.isNew && child.parent_id !== top.id,
         });
       }
       const liveChildren = categories.filter((c) => c.parent_id === top.id);
@@ -715,24 +728,42 @@ export default class extends Controller {
         Boolean(top.group) ||
         top.moved ||
         liveChildren.length !== children.length ||
-        children.some((c) => c.parent_id !== top.id) ||
+        children.some((c) => c.isNew || c.parent_id !== top.id) ||
         Object.values(this.#plan?.removals || {}).includes(top.id);
     }
 
-    if (spending[UNCATEGORIZED]) {
+    // Uncategorized: transactions with no category, plus the plan's new
+    // categories that haven't been given a parent yet.
+    const waiting = this.#childrenOf(UNCATEGORIZED);
+    if (spending[UNCATEGORIZED] || waiting.length) {
+      const leaves = spending[UNCATEGORIZED]
+        ? [
+            {
+              id: `${UNCATEGORIZED}${DIRECT}`,
+              name: uncategorized.name,
+              color: uncategorized.color,
+              series: spending[UNCATEGORIZED],
+            },
+          ]
+        : [];
+      for (const child of waiting) {
+        const look = this.#look(child.id);
+        leaves.push({
+          id: child.id,
+          name: look.name,
+          icon: look.icon,
+          color: uncategorized.color,
+          series: this.#spendingOf(child.id) || this.#zeros(),
+          group: true,
+        });
+      }
       tops.push({
         id: UNCATEGORIZED,
         name: uncategorized.name,
         color: uncategorized.color,
         icon: "circle-dashed",
-        leaves: [
-          {
-            id: `${UNCATEGORIZED}${DIRECT}`,
-            name: uncategorized.name,
-            color: uncategorized.color,
-            series: spending[UNCATEGORIZED],
-          },
-        ],
+        leaves,
+        changed: waiting.length > 0,
       });
     }
 
@@ -1012,12 +1043,14 @@ export default class extends Controller {
   #enableCircleDrag(node, root) {
     const tops = root.children || [];
     const movable = (d) =>
-      this.#categoriesById.has(d.data.id) && (d.depth === 2 || !d.children);
+      (this.#categoriesById.has(d.data.id) ||
+        Boolean(this.#group(d.data.id))) &&
+      (d.depth === 2 || !d.children);
     const over = (x, y, d) =>
       tops.find(
         (t) =>
           t !== d &&
-          t.data.id !== UNCATEGORIZED &&
+          (t.data.id !== UNCATEGORIZED || Boolean(this.#group(d.data.id))) &&
           Math.hypot(x - t.x, y - t.y) < t.r,
       );
     const circles = node.select("circle");
@@ -1336,9 +1369,9 @@ export default class extends Controller {
     li.append(this.#menuButton(target));
     this.#bindContextMenu(li, target);
     if (this.draftValue.can_edit && this.planValue.editable) {
-      if (this.#categoriesById.has(node.id)) this.#makeDraggable(li, node.id);
-      if (depth === 0 && node.id !== UNCATEGORIZED)
-        this.#makeDropTarget(li, node.id);
+      if (this.#categoriesById.has(node.id) || this.#group(node.id))
+        this.#makeDraggable(li, node.id);
+      if (depth === 0) this.#makeDropTarget(li, node.id);
     }
     return li;
   }
@@ -1820,7 +1853,10 @@ export default class extends Controller {
     const children = this.#childrenOf(id).map((c) => c.id);
     const incoming = this.#incoming(id);
     this.#changePlan((plan) => {
-      if (newGroup) plan.groups.push(newGroup);
+      if (newGroup) {
+        plan.groups.push(newGroup);
+        plan.parents[newGroup.key] = UNCATEGORIZED;
+      }
       // Transactions on their way into this category go where its own go.
       for (const source of incoming) plan.removals[source] = target;
       for (const child of children) {
@@ -1831,6 +1867,7 @@ export default class extends Controller {
       plan.excluded = plan.excluded.filter((e) => e !== id);
       if (this.#group(id)) {
         plan.groups = plan.groups.filter((g) => g.key !== id);
+        delete plan.parents[id];
         return;
       }
       plan.removals[id] = target;
