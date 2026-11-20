@@ -168,6 +168,47 @@ class BudgetPlannerTest < ApplicationSystemTestCase
     assert_no_selector "[data-budget-planner-target='chartCard'].fixed"
   end
 
+  test "in the lines view a chip cycles through line, line with over and under, and hidden" do
+    visit six_months
+    amount_field("Loan interest").fill_in(with: "10")
+    chart = "[data-budget-planner-target='history']"
+    hatched = "#{chart} path[fill^='url(#planner-hatch']"
+    within("[data-budget-planner-target='chartCard']") do
+      click_on "Lines"
+      find("summary", text: "Chart options").click
+      within(:xpath, ".//span[span[text()='Budget shading']]") { click_on "Off" }
+    end
+    assert_no_selector hatched
+
+    chip = -> { find("[data-budget-planner-target='chartChips'] button", text: "Loan interest") }
+    assert_equal "line", chip.call["data-state"]
+
+    chip.call.click
+    assert_equal "shade", chip.call["data-state"]
+    assert_selector hatched
+
+    chip.call.click
+    assert_equal "hidden", chip.call["data-state"]
+    assert_no_selector hatched
+
+    chip.call.click
+    assert_equal "line", chip.call["data-state"]
+  end
+
+  test "the small charts can be made larger, one per row" do
+    page.driver.browser.manage.window.resize_to(1600, 1400)
+    visit six_months
+    within("[data-budget-planner-target='chartCard']") do
+      click_on "One each"
+      find("summary", text: "Chart options").click
+      click_on "Large"
+    end
+
+    boxes = all("[data-budget-planner-target='history'] .grid > div")
+    assert_operator boxes.size, :>=, 2
+    assert_equal 1, boxes.map { |box| box.rect.x }.uniq.size, "stacked in one column"
+  end
+
   test "the budget line follows the amount typed in the panel" do
     visit six_months
     within("[data-budget-planner-target='chartCard']") { click_on "One each" }

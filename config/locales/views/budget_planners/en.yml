@@ -33,6 +33,7 @@ en:
           colour_all: Other lines
           ahead: Project ahead
           compound: Growth curve
+          size: Small charts
         option_values:
           rolling:
             "false": Monthly
@@ -61,13 +62,17 @@ en:
           compound:
             "true": Compound
             "false": Linear
+          size:
+            small: Small
+            medium: Medium
+            large: Large
         growth: Budget growth
         categories: Parent categories
         pick:
           top: Top 5
           all: All
           none: None
-        chips_hint: Tap to show or hide; double-tap for only that one.
+        chips_hint: "Tap to show or hide. In Lines, tap again to add over/under, a third time to hide. Double-tap for only that one."
         zoom_hint: Drag across the strip to zoom in on months; drag the selection to scroll.
         zoom_label: Spending in every month; drag to choose the months shown
       plan_label: Plan
@@ -142,6 +147,10 @@ en:
           rolling_note: 3-month average
           over_count: "over %{over} of %{of}"
           cycle_short: "cycle %{months} mo"
+          chip:
+            line: "%{name}: shown. Tap to add over and under budget."
+            shade: "%{name}: shown with over and under budget. Tap to hide."
+            hidden: "%{name}: hidden. Tap to show."
           columns:
             actual: actual
             fitted: fitted

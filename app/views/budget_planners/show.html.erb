@@ -99,7 +99,8 @@
                  shade: %w[off focus all],
                  cycles: %w[false true],
                  colour_all: %w[false true],
-                 ahead: %w[0 6 12]
+                 ahead: %w[0 6 12],
+                 size: %w[small medium large]
                }.each do |option, values| %>
               <span class="inline-flex items-center gap-2">
                 <span class="text-xs text-subdued"><%= t(".chart.option_labels.#{option}") %></span>

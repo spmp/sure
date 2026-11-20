@@ -111,7 +111,10 @@ export default class extends Controller {
     ahead: 0,
     growth: 0,
     compound: true,
+    size: "small",
   };
+  // Categories whose chip asks for over/under in the lines view.
+  #chartShaded = new Set();
   #chartShown = null;
   #chartWindow = null;
   #chartHover = null;
@@ -1270,6 +1273,7 @@ export default class extends Controller {
         history,
         parents,
         shown: this.#chartShown,
+        shaded: this.#chartShaded,
         focus,
         window: this.#chartWindow,
         options,
@@ -1315,26 +1319,49 @@ export default class extends Controller {
     }
   }
 
+  // In the lines view a chip cycles: line → line with over/under → hidden.
+  // Elsewhere it shows or hides. Double-tap shows only that category.
   #renderChartChips(parents, focus) {
     const shown = this.#chartShown;
+    const shaded = this.#chartShaded;
+    const lines = this.#chart.view === "lines";
     this.chartChipsTarget.replaceChildren(
       ...parents.map((p) => {
+        let state = "hidden";
+        if (shown.has(p.id))
+          state = lines && shaded.has(p.id) ? "shade" : "line";
         const chip = document.createElement("button");
         chip.type = "button";
-        const on = shown.has(p.id);
-        chip.className = `inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs focus-ring ${on ? "border-secondary text-primary" : "border-subdued text-subdued"} ${p.id === focus ? "ring-2 ring-current" : ""}`;
-        chip.setAttribute("aria-pressed", String(on));
+        chip.dataset.state = state;
+        chip.setAttribute("aria-pressed", String(state !== "hidden"));
+        chip.className = `inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs focus-ring ${state === "hidden" ? "border-subdued text-subdued" : "border-secondary text-primary"} ${p.id === focus ? "ring-2 ring-current" : ""}`;
+        chip.setAttribute(
+          "aria-label",
+          this.#label(`chart.chip.${state}`, { name: p.name }),
+        );
         const swatch = document.createElement("span");
-        swatch.className = "w-2.5 h-2.5 rounded-full bg-surface-inset";
-        if (on) swatch.style.backgroundColor = p.color;
+        swatch.className = "w-2.5 h-2.5 shrink-0 bg-surface-inset";
+        swatch.classList.add(state === "shade" ? "rounded-sm" : "rounded-full");
+        if (state === "line") swatch.style.backgroundColor = p.color;
+        if (state === "shade") {
+          swatch.style.border = `1px solid ${p.color}`;
+          swatch.style.backgroundImage = `repeating-linear-gradient(45deg, ${p.color} 0 1.5px, transparent 1.5px 3.5px)`;
+        }
         chip.append(swatch, document.createTextNode(p.name));
         let last = 0;
         chip.addEventListener("click", (event) => {
           const now = Date.now();
-          if (event.altKey || now - last < 350)
+          if (event.altKey || now - last < 350) {
             this.#chartShown = new Set([p.id]);
-          else if (shown.has(p.id)) shown.delete(p.id);
-          else shown.add(p.id);
+          } else if (state === "hidden") {
+            shown.add(p.id);
+            shaded.delete(p.id);
+          } else if (state === "line" && lines && p.budget != null) {
+            shaded.add(p.id);
+          } else {
+            shown.delete(p.id);
+            shaded.delete(p.id);
+          }
           last = now;
           if (this.#chartShown.has(p.id)) this.#selected = p.id;
           else if (this.#selected === p.id) this.#selected = null;

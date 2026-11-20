@@ -22,6 +22,13 @@ import {
 // }
 const VIEW_HEIGHT = { lines: 360, percent: 320 };
 
+// "One each": how wide each small chart may get, and how tall it is.
+const MULTIPLE_SIZES = {
+  small: { column: "repeat(auto-fill, minmax(220px, 1fr))", height: 140 },
+  medium: { column: "repeat(auto-fill, minmax(360px, 1fr))", height: 190 },
+  large: { column: "minmax(0, 1fr)", height: 240 },
+};
+
 export function drawPlannerChart(container, overviewSvg, input) {
   const chart = new PlannerChart(input);
   if (overviewSvg) chart.drawOverview(overviewSvg);
@@ -83,11 +90,14 @@ class PlannerChart {
     );
   }
 
+  // Over/under shows for every category, for the focused one, and for
+  // any whose chip asks for it.
   shadeFor(p) {
+    if (p.budget == null) return false;
+    if (this.input.shaded?.has(p.id)) return true;
     return (
-      p.budget != null &&
-      (this.o.shade === "all" ||
-        (this.o.shade === "focus" && p.id === this.input.focus))
+      this.o.shade === "all" ||
+      (this.o.shade === "focus" && p.id === this.input.focus)
     );
   }
 
@@ -365,7 +375,7 @@ class PlannerChart {
         .attr("opacity", opacity)
         .attr("class", "text-success")
         .attr("fill", "currentColor")
-        .attr("fill-opacity", 0.14)
+        .attr("fill-opacity", 0.22)
         .attr(
           "d",
           d3
@@ -588,7 +598,11 @@ class PlannerChart {
           y,
           p,
           "planner-hatch",
-          this.o.shade === "all" && p.id !== this.input.focus ? 0.55 : 1,
+          this.o.shade === "all" &&
+            p.id !== this.input.focus &&
+            !this.input.shaded?.has(p.id)
+            ? 0.55
+            : 1,
         );
     }
     for (const p of ordered) {
@@ -701,7 +715,8 @@ class PlannerChart {
   drawMultiples(container) {
     const grid = document.createElement("div");
     grid.className = "grid gap-3";
-    grid.style.gridTemplateColumns = `repeat(auto-fill, minmax(${this.input.tall ? 320 : 220}px, 1fr))`;
+    const size = MULTIPLE_SIZES[this.o.size] || MULTIPLE_SIZES.small;
+    grid.style.gridTemplateColumns = size.column;
     container.append(grid);
     for (const p of this.shown) {
       const box = document.createElement("div");
@@ -732,20 +747,24 @@ class PlannerChart {
 
       const margin = { top: 8, right: 8, bottom: 20, left: 48 };
       const width = Math.max(200, holder.clientWidth);
-      const height = this.input.tall ? 200 : 140;
+      const height = this.input.tall ? size.height + 60 : size.height;
       const svg = this.svgIn(holder, width, height);
       const x = this.xScale(width, margin);
       const idx = this.range;
-      const max = d3.max(idx, (i) =>
-        Math.max(
-          this.compared(p, i) ?? 0,
-          this.o.fit !== "off" ? this.fitted(p, i) : 0,
-          this.budget(p, i) ?? 0,
-        ),
+      // Each chart's scale spans its own values, not from zero, so the gap
+      // between spending and budget is easy to see.
+      const values = idx.flatMap((i) =>
+        [
+          this.compared(p, i),
+          this.o.fit !== "off" ? this.fitted(p, i) : null,
+          this.budget(p, i),
+        ].filter((v) => v != null),
       );
+      const [low, high] = d3.extent(values);
+      const pad = (high - low) * 0.1 || high * 0.1 || 1;
       const y = d3
         .scaleLinear()
-        .domain([0, (max || 1) * 1.1])
+        .domain([Math.max(0, low - pad), high + pad])
         .nice()
         .range([height - margin.bottom, margin.top]);
       this.forecastBand(svg, x, width, height, margin);
